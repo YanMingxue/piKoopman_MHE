@@ -1,0 +1,4 @@
+*.pt
+data/
+save_model/
+Koopman_result/
