@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/mixu_pytorch-main.iml" filepath="$PROJECT_DIR$/.idea/mixu_pytorch-main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/Physics-imformed-koopman-MHE.iml" filepath="$PROJECT_DIR$/.idea/Physics-imformed-koopman-MHE.iml" />
     </modules>
   </component>
 </project>

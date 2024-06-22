@@ -6,8 +6,8 @@ from gym.envs import mujoco
 SEED = None
 
 
-reference_ = pd.read_csv('halfcheetah_states.csv')
-reference = reference_.values
+# reference_ = pd.read_csv('halfcheetah_states.csv')
+# reference = reference_.values
 
 
 
@@ -209,7 +209,7 @@ ENV_PARAMS = {
         'eval_render': True,
 
 
-        'reference': reference,
+        # 'reference': reference,
         'Q': np.diag([2, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 2, 1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.1]),
         'R': np.diag(0.01 * np.ones([6])),
         'end_weight': 100.,

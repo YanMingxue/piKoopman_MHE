@@ -51,6 +51,7 @@ def train(args, env):
     # model.parameter_restore(args)
     if args['reload_data'] == False:
         replay_memory = ReplayMemory(args, env, predict_evolution=True)
+    # replay_memory = ReplayMemory(args, env, predict_evolution=True)
     # model.set_shift_and_scale(replay_memory)
 
     #############################00000000000#########################
@@ -68,7 +69,7 @@ def train(args, env):
         x_val = replay_memory.val_subset
 
     ##-----------continue train------------##
-    args['restore'] = False
+    args['restore'] = True
     if args['restore'] == True:
         model.parameter_restore(args)
 
@@ -77,10 +78,17 @@ def train(args, env):
     else:
         test_data = DataLoader(dataset=replay_memory.dataset_test, batch_size=1, shuffle=True, drop_last=True)
 
+    train_list = []
+    val_list = []
     for e in range(args['num_epochs']):
-        model.learn(e, x_train, x_val, shift, args)
+        train,val = model.learn(e, x_train, x_val, shift, args)
+        train_list.append(train)
+        val_list.append(val)
         if (e % 10 == 0):
+            # 生成test数据的时候先不保存权重
             model.parameter_store(args)
+            # if args['if_sigma']:
+            #     print("sigma:",model.sigma)
             if args['if_pi']:
                 print("d={},p2={},p3={}".format(model.d, model.p2, model.p3))
         if (e % 1 == 0):
@@ -90,13 +98,12 @@ def train(args, env):
         if test_loss < test_mse:
             test_mse = test_loss
 
-    # plt.clf()
-    # values = [tensor.item() for tensor in test_curve]
-    # fig = plt.figure(figsize=(8, 4))
-    # plt.plot(values)
-    # plt.title('Test Error Curve')
-    # plt.ylabel('MSE')
-    # plt.show()
+        break
+
+    print("train curve:", train_list)
+    print("save train and val curve...")
+    torch.save(train_list, "save_model/train_list.pt")
+    torch.save(val_list, "save_model/val_list.pt")
 
     return test_mse, test_curve
 

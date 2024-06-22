@@ -2,12 +2,14 @@ import torch
 import numpy as np
 import math
 import copy
-
+import torch.distributions as dist
+import torch.distributions.transforms as transforms
 import torch.nn as nn
 import torch.optim as optim
 import torch.distributions as torchd
 from torch.utils.data import Dataset, DataLoader, random_split
 from matplotlib import pyplot as plt
+import torch.nn.functional as F
 
 from three_tanks import three_tank_system
 
@@ -60,6 +62,7 @@ class Koopman_Desko(object):
 
         if args['ABCD'] == 1:
             if args['extend_state']:
+                # 用这个
                 self._create_koopman_matrix_a1_extend(args)
             else:
                 self._create_koopman_matrix_a1(args)
@@ -72,14 +75,19 @@ class Koopman_Desko(object):
         self.net = MLP(args).to(args['device'])
         self.net.apply(weights_init)
 
+        self.NoiseModel = NoiseModel(args).to(args['device'])
+        self.noisemlp = Noise_MLP(args).to(args['device'])
+
         self.net_para = {}
+        self.noise_para = {}
 
         self.loss_buff = 100000
 
 
         # self.optimizer = optim.Adam([{'params': self.net.parameters(),'lr':args['lr']},{'params': [self.A_1,self.B_1,self.C_1,],'lr':args['lr']}])
 
-        self.optimizer1 = optim.Adam([{'params': self.net.parameters(),'lr':args['lr1'],'weight_decay':args['weight_decay']}])
+        self.optimizer1 = optim.Adam([{'params': self.net.parameters(), 'lr': args['lr1'], 'weight_decay':args['weight_decay']},
+                                      {'params': self.noisemlp.parameters(), 'lr': args['lr1'], 'weight_decay': args['weight_decay']}])
         self.optimizer1_sch = torch.optim.lr_scheduler.StepLR(self.optimizer1, step_size=args['optimize_step'], gamma=args['gamma'])
 
         if args['ABCD'] != 2:
@@ -94,6 +102,7 @@ class Koopman_Desko(object):
                                                               gamma=args['gamma'])
 
         self.MODEL_SAVE = args['MODEL_SAVE']
+        self.NOISE_SAVE = args['NOISE_SAVE']
         self.SAVE_A1 = args['SAVE_A1']
         self.SAVE_B1 = args['SAVE_B1']
         self.SAVE_C1 = args['SAVE_C1']
@@ -122,11 +131,10 @@ class Koopman_Desko(object):
         self.C_1 = scale*self.C_1
         self.C_1.requires_grad_(True)
     
-    # def _lsqr_A_B_C(self):
-
 
 
     def _create_koopman_matrix_a1_extend(self, args):
+        #用这个
         """
         In this approach
         A,B,C,D are regarded as the same as 
@@ -136,18 +144,21 @@ class Koopman_Desko(object):
         
         self.A_1 = torch.randn(args['latent_dim']+args['state_dim'], args['latent_dim']+args['state_dim']).to(args['device'])
         self.B_1 = torch.randn(args['act_expand'], args['latent_dim']+args['state_dim']).to(args['device'])
-        self.C_1 = torch.randn(args['latent_dim']+args['state_dim'], args['state_dim']).to(args['device'])
+        self.C_1 = torch.zeros(args['latent_dim']+args['state_dim'], args['state_dim']).to(args['device'])
+        # self.C_2 = torch.randn(args['latent_dim']+args['state_dim'], args['output_dim']).to(args['device'])
 
-        self.A_1 = scale*self.A_1+torch.eye(args['latent_dim']+args['state_dim'], args['latent_dim']+args['state_dim']).to(args['device'])
+        self.A_1 = scale * self.A_1+torch.eye(args['latent_dim']+args['state_dim'], args['latent_dim']+args['state_dim']).to(args['device'])
         self.A_1.requires_grad_(True)
 
         self.B_1 = scale*self.B_1
         self.B_1.requires_grad_(True)
 
-        self.C_1 = scale*self.C_1
-        self.C_1[:args['state_dim'],:]= (1.0*torch.eye(args['state_dim'],args['state_dim'])\
-                                         +torch.randn(args['state_dim'],args['state_dim'])*scale).to(args['device'])
-        self.C_1.requires_grad_(True)
+        # self.C_1 = scale*self.C_1
+        # self.C_1[:args['state_dim'],:]= (1.0*torch.eye(args['state_dim'],args['state_dim'])\
+        #                                  +torch.randn(args['state_dim'],args['state_dim'])*scale).to(args['device'])
+        # self.C_1.requires_grad_(True)
+
+        self.C_1[:args['state_dim'],:] = torch.eye(args['state_dim'],args['state_dim'])
 
 
 
@@ -222,12 +233,9 @@ class Koopman_Desko(object):
             loss_buff = self.loss / count
 
         if loss_buff<self.loss_buff:
-            # Koopman_Desko.parameter_store(self,args)
-            # self.net_para = self.net.state_dict()
-            # self.A_1_restore = self.A_1
-            # self.B_1_restore = self.B_1
             # self.C_1_restore = self.C_1
             self.net_para = copy.deepcopy(self.net.state_dict())
+            self.noise_para = copy.deepcopy(self.noisemlp.state_dict())
             self.A_1_restore = copy.deepcopy(self.A_1)
             self.B_1_restore = copy.deepcopy(self.B_1)
             self.C_1_restore = copy.deepcopy(self.C_1)
@@ -250,12 +258,15 @@ class Koopman_Desko(object):
 
         if args['if_pi']:
             print('epoch {}: loss_traning data {} loss_val data {} minimal loss {} learning_rate {}'.format(e,loss_buff,self.d_loss/count,self.loss_buff,self.optimizer1_sch.get_last_lr()))
+            return loss_buff,self.d_loss / count
+
         else:
             print(
                 'epoch {}: loss_traning data {} loss_val data {} minimal loss {} learning_rate {}'.format(e, loss_buff,
                                                                                                           self.loss / count,
                                                                                                           self.loss_buff,
                                                                                                           self.optimizer1_sch.get_last_lr()))
+            return loss_buff, self.loss / count
 
     def test_(self,test,args):
         self.test_data = DataLoader(dataset = test, batch_size = 10, shuffle = True)
@@ -267,6 +278,15 @@ class Koopman_Desko(object):
 
 
     def pred_forward(self,x,u,shift,args):
+
+        # self.w_mean = torch.zeros(args['state_dim']+args['latent_dim'])
+        # base_distribution = dist.MultivariateNormal(torch.zeros(args['latent_dim'] + args['state_dim']),
+        #                                             torch.eye(args['latent_dim'] + args['state_dim']))
+        # self.sigma = self.NoiseModel()
+        #
+        # bijector = transforms.AffineTransform(loc=self.w_mean, scale=self.sigma)
+        # self.epsilon = base_distribution.sample((args['batch_size'], args['pred_horizon']))
+
 
         # x = x.to(args['device'])
         # u = u.to(args['device'])
@@ -304,12 +324,36 @@ class Koopman_Desko(object):
 
 
         x_pred_matrix = torch.zeros_like(x[:,1:,:])
+        # y_pred_matrix = torch.zeros_like(x[:, 1:, :])
         x_pred_matrix_all = torch.zeros([x.shape[0],x.shape[1]-1,args['latent_dim']]).to(args['device'])
+        x_pred_matrix_n = torch.zeros_like(x[:, 1:, :])
+        x_pred_matrix_all_n = torch.zeros([x.shape[0], x.shape[1] - 1, args['latent_dim']]).to(args['device'])
+
+        self.w_mean = torch.zeros(args['batch_size'], 1, args['state_dim'] + args['latent_dim']).to(args['device'])
+        base_distribution = dist.MultivariateNormal(torch.zeros(args['latent_dim'] + args['state_dim']),
+                                                    torch.eye(args['latent_dim'] + args['state_dim']))
+        self.epsilon = base_distribution.sample((args['batch_size'],1, args['pred_horizon'])).to(args['device'])
+
+        SCALE_DIAG_MIN_MAX = (-20, 2)
+        if args['if_sigma']:
+            x0_n = x0
+            for i in range(pred_horizon-1):
+                log_sigma = self.noisemlp(x0_n)
+                log_sigma = torch.clamp(log_sigma, min=SCALE_DIAG_MIN_MAX[0], max=SCALE_DIAG_MIN_MAX[1])
+                self.sigma = torch.exp(log_sigma).unsqueeze(1)
+                bijector = transforms.AffineTransform(loc=self.w_mean, scale=self.sigma)
+                self.w = bijector(self.epsilon[:, :, i, :])
+                # self.w = self.w_mean + self.e_sigma * self.epsilon[:, :, i]
+                self.w = self.w.squeeze()
+                x0_n = torch.matmul(x0_n,self.A_1)+torch.matmul(u[:,i,:],self.B_1) + self.w
+                x_pred_n = torch.matmul(x0_n, self.C_1)
+                x_pred_matrix_all_n[:,i,:] = x0_n[:, -args['latent_dim']:]
+                x_pred_matrix_n[:,i,:] = x_pred_n
 
         for i in range(pred_horizon-1):
             x0 = torch.matmul(x0,self.A_1)+torch.matmul(u[:,i,:],self.B_1)
             x_pred = torch.matmul(x0,self.C_1)
-            x_pred_matrix_all[:,i,:] = x0[:,-args['latent_dim']:]
+            x_pred_matrix_all[:,i,:] = x0[:, -args['latent_dim']:]
             x_pred_matrix[:,i,:] = x_pred
 
         # #------------------------------#
@@ -319,12 +363,20 @@ class Koopman_Desko(object):
         # self.d_loss += loss(x_pred_matrix[:,-1,:],x[:,-1,:])*10
         # self.d_loss += loss(x_pred_all[:,-1,:].to(args['device']),x_pred_matrix_all[:,-1,:].to(args['device']))
         # ------------------------------#
-        self.d_loss += loss(x_pred_matrix[:, :, :], x[:, 1:, :]) * 10
-        self.d_loss += loss(x_pred_all[:, :, :], x_pred_matrix_all[:, :, :])
-        # -----------终端约束-----------##
-        self.d_loss += loss(x_pred_matrix[:, -1, :], x[:, -1, :]) * 10
-        self.d_loss += loss(x_pred_all[:, -1, :], x_pred_matrix_all[:, -1, :])
 
+        self.select = [2, 5, 8]
+        if args['if_sigma']:
+            self.d_loss += loss(x_pred_matrix_n[:, :, :], x[:, 1:, :]) * 10
+            self.d_loss += loss(x_pred_all[:, :, :], x_pred_matrix_all_n[:, :, :])
+            # -----------终端约束-----------##
+            self.d_loss += loss(x_pred_matrix_n[:, -1, :], x[:, -1, :]) * 10
+            self.d_loss += loss(x_pred_all[:, -1, :], x_pred_matrix_all_n[:, -1, :])
+        else:
+            self.d_loss += loss(x_pred_matrix[:, :, :], x[:, 1:, :]) * 10
+            self.d_loss += loss(x_pred_all[:, :, :], x_pred_matrix_all[:, :, :])
+            # -----------终端约束-----------##
+            self.d_loss += loss(x_pred_matrix[:, -1, :], x[:, -1, :]) * 10
+            self.d_loss += loss(x_pred_all[:, -1, :], x_pred_matrix_all[:, -1, :])
 
         if args['if_pi']:
             ##########################
@@ -335,7 +387,6 @@ class Koopman_Desko(object):
             x_pred_matrix_re = x_pred_matrix * shift[1] + shift[0]
             u_re = u * shift[3] + shift[2]
 
-            # [1, 50]
             # ############################
             '''
             loss2 : X_k+1 - X_k = ΔX_k
@@ -347,9 +398,9 @@ class Koopman_Desko(object):
 
             dxk = (dxk_s - shift[0]) / shift[1]
             pred_dxk = x_pred_matrix[:, 1:, :] - x_pred_matrix[:, :-1, :]
-            self.p2_loss += 0.5 * loss(dxk[:, :, :], pred_dxk[:, :, :])
-            # self.p2_loss += 0.03 * loss(dxk[:, :, [2, 5, 8]], pred_dxk[:, :, [2, 5, 8]])
-            # self.p2_loss += 0.03 * loss(dxk[:, :, [0, 1, 3, 4, 6, 7]], pred_dxk[:, :, [0, 1, 3, 4, 6, 7]])
+            # self.p2_loss += 0.5 * loss(dxk[:, :, :], pred_dxk[:, :, :])
+            self.p2_loss += 0.1 * loss(dxk[:, :, [2, 5, 8]], pred_dxk[:, :, [2, 5, 8]])
+            # self.p2_loss +=  loss(dxk[:, :, [0, 1, 3, 4, 6, 7]], pred_dxk[:, :, [0, 1, 3, 4, 6, 7]])
 
             ############################
             '''
@@ -357,26 +408,32 @@ class Koopman_Desko(object):
             '''
             xk = torch.zeros([args['batch_size'], args['pred_horizon'] - 2, args['state_dim']]).to(args['device'])
             # dxk_s = system.derivative(x_pred_matrix_re[:, :-1, :], u_re[:, 1:, :]) * system.h
-
-            # xk[:, :, [0, 1, 3, 4, 6, 7]] = dxk_s[:, :, [0, 1, 3, 4, 6, 7]] + x_pred_matrix_re[:, :-1, [0, 1, 3, 4, 6, 7]]
-            # xk[:, :, [2, 5, 8]] = x_pred_matrix_re[:, 1:, [2, 5, 8]]
-            # xk[:, :, [2, 5, 8]] = dxk_s[:, :, [2, 5, 8]] + x_pred_matrix_re[:, :-1, [2, 5, 8]]
-            # xk[:, :, [0, 1, 3, 4, 6, 7]] = x_pred_matrix_re[:, 1:, [0, 1, 3, 4, 6, 7]]
-            xk[:, :, :] = dxk_s[:, :, :] + x_pred_matrix_re[:, :-1, :]
+            xk[:, :, :] = x_pred_matrix_re[:, 1:, :]
+            xk[:, :, [2, 5, 8]] = dxk_s[:, :, [2, 5, 8]] + x_pred_matrix_re[:, :-1, [2, 5, 8]]
             xk = (xk - shift[0]) / shift[1]
             gxk = self.net(xk)  # g(f(xk,uk))
             pred_gxk = x_pred_matrix_all[:, 1:, :]  # g(xk+1)
-            self.p3_loss += 10 * loss(pred_gxk, gxk)
+            self.p3_loss += 100 * loss(pred_gxk, gxk)
 
-            # # # # self adaptive loss
-            self.loss = (1/pow(self.d, 2))*self.d_loss + (1/pow(self.p2, 2))*self.p2_loss + (1/pow(self.p3, 2))*self.p3_loss\
-                        + 100*(torch.log(1 + pow(self.d, 2)) + torch.log(1 + pow(self.p2, 2)) + torch.log(1 + pow(self.p3, 2)))
+            # self adaptive loss
+            # self.loss = (1/pow(self.d, 2))*self.d_loss \
+            #             + (1/pow(self.p2, 2))*self.p2_loss\
+            #             + 200 * (torch.log(1 + pow(self.d, 2)) + torch.log(1 + pow(self.p2, 2)))
+            self.loss = (1/pow(self.d, 2))*self.d_loss \
+                        + (1/pow(self.p2, 2))*self.p2_loss\
+                        + (1/pow(self.p3, 2))*self.p3_loss\
+                        + 200 * (torch.log(1 + pow(self.d, 2)) + torch.log(1 + pow(self.p2, 2)) + torch.log(1 + pow(self.p3, 2)))
+
+            # self.loss = (1 / pow(self.d, 2)) * self.d_loss + (1 / pow(self.p3, 2)) * self.p3_loss \
+            #             + 100 * (torch.log(1 + pow(self.d, 2)) + torch.log(1 + pow(self.p3, 2)))
 
         else:
             self.loss = self.d_loss
 
+
         self.displace1 = x_pred[7,:]
-        self.displace2 = x[7,i+1,:]
+        self.displace2 = x[7, i+1, :]
+
 
     def pred_forward_test(self,x,u,shift,test,args,e=0):
         x = x.to(args['device'])
@@ -412,20 +469,48 @@ class Koopman_Desko(object):
             if (e % 10 == 0) and args['plot_test']:
                 x = x * shift[1] + shift[0]
                 x_pred_list = torch.stack(x_pred_list).to(args['device']) * shift[1] + shift[0]
-                x=x.cpu()
+                x=x.squeeze().cpu()
                 x_pred_list=x_pred_list.cpu()
-            ##------------------- plot -----------------##
-                for i in range(args['state_dim']):
-                    # axs[i].plot(time_all, x[:,:500, i].T, 'k')
-                    axs[i].plot(x[:, :494, i].T, color='k')
-                    # for j in range(len(x_time_list)):
-                    for j in range(26):
-                        # axs[i].plot(x_time_list[j], x_pred_list[j][:,:,i], 'r')
-                        axs[i].plot(x_time_list[j],x_pred_list[j][:, :, i], color='r')
-                axs[-1].set_xlabel('Steps')
-                # plt.xlabel('Time Step')
-                plt.savefig('data/predictions_' + str(e) + '.png')
+
+                x_pred_list = np.array(x_pred_list)
+                x = np.array(x)
+                x_time_list = np.array(x_time_list)
+
+             ##------------------- plot -----------------##
+                color1 = "#038355"  # 孔雀绿
+                font = {'family': 'Times New Roman', 'size': 12}
+                titles = ['XA1', 'XB1', 'T1',
+                          'XA2', 'XB2', 'T2',
+                          'XA3', 'XB3', 'T3']
+                plt.rc('font', **font)
+                f, axs = plt.subplots(3, 3, sharex=True, figsize=(15, 9))
+                legend_created = False
+                for i in range(3):  # 行索引
+                    for j in range(3):  # 列索引
+                        # 绘制每个子图
+                        axs[i, j].plot(x[:, i * 3 + j], label='Ground Truth', color='k', linewidth=2)
+                        for k in range(len(x_time_list)):
+                            axs[i, j].plot(x_time_list[k], x_pred_list[k][:, :, i * 3 + j], label='Koopman Model Prediction', color=color1, linewidth=2)
+                            if not legend_created:  # 如果还没有获取过 handles 和 labels
+                                handles, labels = axs[i, j].get_legend_handles_labels()
+                                legend_created = True  # 设置标志变量为 True，表示已经获取过一次
+                        axs[i, j].set_title(titles[i * 3 + j])
+                        axs[i, j].legend().set_visible(False)
+
+                for ax in axs[-1, :]:
+                    ax.set_xlabel('Time Steps')
+                plt.tight_layout()
+                # handles, labels = axs[0, 0].get_legend_handles_labels()
+                # f.legend(handles, labels, loc='upper right', bbox_to_anchor=(0.98, 0.98))
+                f.legend(handles, labels, loc='lower center', ncol=len(handles), bbox_to_anchor=(0.5, 0.02))
+                plt.subplots_adjust(bottom=0.15)
+                plt.savefig('data/predictions_new' + str(e) + '.pdf')
+                plt.savefig('data/predictions_new' + str(e) + '.png')
                 print("plot")
+                print("save test list")
+                torch.save(x_pred_list, "result/open_loop/x_pred_list.pt")
+                torch.save(x, "result/open_loop/x.pt")
+                torch.save(x_time_list, "result/open_loop/x_time_list.pt")
 
             return x_pred_list,x_real_list,x_sum_list,self.test_loss
 
@@ -505,6 +590,8 @@ class Koopman_Desko(object):
 
         #save nn
         torch.save(self.net_para,self.MODEL_SAVE)
+        #save noise sigma
+        torch.save(self.noise_para, self.NOISE_SAVE)
         #save A1 B1 C1
         torch.save(self.A_1_restore,self.SAVE_A1)
         torch.save(self.B_1_restore,self.SAVE_B1)
@@ -520,13 +607,19 @@ class Koopman_Desko(object):
         
     def parameter_restore(self,args):
 
-        self.A_1 = torch.load(self.SAVE_A1, map_location=torch.device(args['device']))
-        self.B_1 = torch.load(self.SAVE_B1, map_location=torch.device(args['device']))
-        self.C_1 = torch.load(self.SAVE_C1, map_location=torch.device(args['device']))
+        # self.A_1 = torch.load(self.SAVE_A1, map_location=torch.device(args['device']))
+        self.A_1 = torch.load(self.SAVE_A1, map_location='cpu')
+        self.B_1 = torch.load(self.SAVE_B1, map_location='cpu')
+        self.C_1 = torch.load(self.SAVE_C1, map_location='cpu')
 
         self.net = MLP(args)
-        self.net.load_state_dict(torch.load(self.MODEL_SAVE, map_location=torch.device(args['device'])))
+        self.net.load_state_dict(torch.load(self.MODEL_SAVE, map_location='cpu'))
         self.net.eval()
+
+        if args['if_sigma']:
+            self.noisemlp = Noise_MLP(args)
+            self.noisemlp.load_state_dict(torch.load(self.NOISE_SAVE, map_location='cpu'))
+            self.noisemlp.eval()
 
         # self.optimizer1.load_state_dict(torch.load(self.OPTI1))
         # if args['ABCD'] != 2:
@@ -664,12 +757,6 @@ class physics():
         return F
 
 class encoder(nn.Module):
-    """
-    encoder -> through LSTM
-
-    input_dim -> 
-
-    """
     def __init__(self, input_dim, hid_dim, n_layers, dropout):
         super().__init__()
         self.hid_dim = hid_dim
@@ -677,16 +764,15 @@ class encoder(nn.Module):
 
         self.rnn = nn.LSTM(input_dim, hid_dim, n_layers, dropout = dropout)
         self.dropout = nn.Dropout(dropout)
-        
+
     def forward(self, input):
-        
+
         outputs, (hidden, cell) = self.rnn(input)
 
         #outputs = [input, batch size, hid dim * n directions]
         #hidden = [n layers * n directions, batch size, hid dim]
         #cell = [n layers * n directions, batch size, hid dim]
         return outputs ,hidden, cell
-
 
 class MLP(nn.Module):
 
@@ -709,27 +795,55 @@ class MLP(nn.Module):
     def forward(self,x):
         return self.model(x)
 
-class Mix_x_u(nn.Module):
-
+class NoiseModel(nn.Module):
     def __init__(self, args):
-        super(MLP, self).__init__()
+        super(NoiseModel, self).__init__()
+        self.sigma = nn.Parameter(torch.zeros(args['state_dim']+args['latent_dim']),requires_grad=True)  # 初始化为零向量
+    def forward(self):
+        # 在 forward 方法中应用 softmax 函数
+        softmax_sigma = F.softmax(self.sigma, dim=0)
+        return softmax_sigma
+
+import torch
+import torch.nn as nn
+
+class Noise_MLP(nn.Module):
+    def __init__(self, args):
+        super(Noise_MLP, self).__init__()
         self.model = nn.Sequential(
-            nn.Linear(args['state_dim']+args['act_dim'], 256),
+            nn.Linear(args['state_dim']+args['latent_dim'], 128),
             nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(256, 128),
+            nn.Dropout(0.1),
+            nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Dropout(0.5),
+            nn.Dropout(0.1),
             # nn.Linear(100, 80),
-            nn.Linear(128, args['mix_x_u']),
-            # nn.ReLU(),
-            # nn.Dropout(0.5),
-            # nn.Linear(80, args['latent_dim']),
-            # nn.ReLU(),
+            nn.Linear(64, args['latent_dim']+args['state_dim']),
         )
     def forward(self,x):
-
         return self.model(x)
+#
+# class Mix_x_u(nn.Module):
+#
+#     def __init__(self, args):
+#         super(MLP, self).__init__()
+#         self.model = nn.Sequential(
+#             nn.Linear(args['state_dim']+args['act_dim'], 256),
+#             nn.ReLU(),
+#             nn.Dropout(0.5),
+#             nn.Linear(256, 128),
+#             nn.ReLU(),
+#             nn.Dropout(0.5),
+#             # nn.Linear(100, 80),
+#             nn.Linear(128, args['mix_x_u']),
+#             # nn.ReLU(),
+#             # nn.Dropout(0.5),
+#             # nn.Linear(80, args['latent_dim']),
+#             # nn.ReLU(),
+#         )
+#     def forward(self,x):
+#
+#         return self.model(x)
 
 if __name__ == '__main__':
     pass    

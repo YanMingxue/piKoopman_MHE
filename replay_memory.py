@@ -7,7 +7,6 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import torch
 
 
-
 class MyDataSet(Dataset):
 
     def __init__(self, test, x = None, y = None):
@@ -41,12 +40,7 @@ class MyDataSet(Dataset):
             self.y_choice = (self.u - self.shift_u)/self.scale_u
     
     
-            
 
-            
-
-
-    
 
 
 # Class to load and preprocess data

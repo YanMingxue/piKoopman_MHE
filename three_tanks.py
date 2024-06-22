@@ -5,7 +5,7 @@ from gym import spaces, logger
 from gym.utils import seeding
 import numpy as np
 import csv
-from input import generate_input
+from input import generate_input,generate_testinput
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('TkAgg')
@@ -54,9 +54,24 @@ class three_tank_system(gym.Env):
         self.Hvap2 = -torch.tensor(15.7E3).to(self.args['device']) * self.sum_c
         self.Hvap3 = -torch.tensor(40.68E3).to(self.args['device']) * self.sum_c
 
-        # self.kw = torch.tensor([0.01, 0.01, 0.1, 0.01, 0.01, 0.1, 0.01, 0.01, 0.1]).to(self.args['device']) # noise deviation
-        self.kw = torch.tensor([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).to(self.args['device'])
-        self.bw = torch.tensor([0.1, 0.1, 1, 0.1, 0.1, 1, 0.1, 0.1, 1]).to(self.args['device']) # noise bound
+        # large noise
+        """好用的noise"""
+        # self.kw = torch.tensor([1., 5., 100., 1., 5., 100., 1., 5., 100.]).to(self.args['device'])  # noise deviation
+        # self.bw = torch.tensor([2., 10., 200., 2., 10., 200., 2., 10., 200.]).to(self.args['device'])  # noise bound
+        '''最近用的'''
+        # self.kw = torch.tensor([0.5, 2.5, 50., 0.5, 2.5, 50., 0.5, 2.5, 50.]).to(self.args['device'])  # noise deviation
+        # self.bw = torch.tensor([1., 5., 100., 1., 5., 100., 1., 5., 100.]).to(self.args['device'])  # noise bound
+        '''论文上写的'''
+        self.kw = torch.tensor([0.7, 0.7, 3.5, 0.7, 0.7, 3.5, 0.7, 0.7, 3.5]).to(self.args['device'])  # noise deviation
+        self.bw = torch.tensor([5., 5., 10., 5., 5., 10., 5., 5., 10.]).to(self.args['device'])  # noise bound
+
+        # # 小噪声画loss的图，noise不大的时候确实加pi效果好很多
+        # self.kw = torch.tensor([0.1, 0.1, 10., 0.1, 0.1, 10., 0.1, 0.1, 10.]).to(self.args['device'])  # noise deviation
+        # self.bw = torch.tensor([1., 10., 100., 1., 10., 100., 1., 10., 100.]).to(self.args['device'])  # noise bound
+
+        # """新换的"""
+        # self.kw = torch.tensor([0.5, 2., 10., 0.5, 2., 10., 0.5, 2., 10.]).to(self.args['device'])  # noise deviation
+        # self.bw = torch.tensor([1, 4., 20., 1, 4., 20., 1, 4., 20.]).to(self.args['device'])  # noise bound
 
         self.xs = torch.tensor([0.1763, 0.6731, 480.3165, 0.1965, 0.6536, 472.7863, 0.0651, 0.6703, 474.8877]).to(self.args['device'])
         self.us = 1.12 * np.array([2.9e9, 1.0e9, 2.9e9])
@@ -87,6 +102,11 @@ class three_tank_system(gym.Env):
         signal = action.signal_generate(T)
         return signal
 
+    def get_testaction(self, T):
+        action_test = generate_testinput()
+        signal = action_test.signal_generate(T)
+        return signal
+
     def step(self, step, input):
         action = input[step-1, :].to(self.args['device'])
         x0 = self.state.to(self.args['device'])
@@ -113,6 +133,15 @@ class three_tank_system(gym.Env):
         self.time = 0
         return self.state.to(self.args['device'])
 
+    def reset(self,test = False, seed_=1):
+        self.a_holder = self.action_space.sample()
+        self.state = (torch.rand_like(self.xs) * 0.2 + 1) * self.xs + torch.randn_like(self.xs) * (self.xs * 0.01)
+        if test:
+            np.random.seed(seed_)
+            self.state = torch.tensor([0.9599, 0.9039, 1.1200, 0.9726, 1.1643, 0.8727, 0.9055, 0.8582, 0.8544])* self.xs.cpu()
+        self.t = 0
+        self.time = 0
+        return self.state.to(self.args['device'])
     
     def derivative(self, x, us):
 
@@ -183,20 +212,22 @@ class three_tank_system(gym.Env):
         scale = 0.1 * self.xs
         return np.random.normal(np.zeros_like(self.xs), scale)
 
+import my_args
 if __name__=='__main__':
-
-    env = three_tank_system()
-    T = 20000
+    args = my_args.args
+    args['device'] = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    env = three_tank_system(args)
+    T = 2000
     path = []
     t1 = []
     s = env.reset()
-    action = env.get_action(T)
+    action = env.get_testaction(T)
     for i in range(int(T)):
         s, r, done, info = env.step(i, action)
-        path.append(s)
+        path.append(s.cpu().numpy())
         t1.append(i)
     path = np.array(path)
-    state_dim = s.shape[0]
+    state_dim = 9
     fig, ax = plt.subplots(state_dim, sharex=True, figsize=(15, 15))
     t = range(T)
     for i in range(state_dim):
