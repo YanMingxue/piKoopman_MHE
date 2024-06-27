@@ -99,7 +99,6 @@ class base_MHE(object):
             # xk = torch.tensor(x[i, :])
             # g = model.net(xk)
             # g = torch.cat([xk, g])
-            # TODO: 用g在上一时刻的预测值做这个是合理的吗？？？
             if args['if_sigma']:
                 g = self.g_init
                 self.Weight_matrix_calculate(model, torch.tensor(g, dtype=torch.float))
@@ -145,7 +144,6 @@ class base_MHE(object):
             # xk = torch.tensor(x[i, :])
             # g = model.net(xk)
             # g = torch.cat([xk, g])
-            # TODO: 用g在上一时刻的预测值做这个是合理的吗？？？
             if args['if_sigma']:
                 g = self.g_init
                 self.Weight_matrix_calculate(model, torch.tensor(g, dtype=torch.float))

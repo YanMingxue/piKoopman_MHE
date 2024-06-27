@@ -54,24 +54,9 @@ class three_tank_system(gym.Env):
         self.Hvap2 = -torch.tensor(15.7E3).to(self.args['device']) * self.sum_c
         self.Hvap3 = -torch.tensor(40.68E3).to(self.args['device']) * self.sum_c
 
-        # large noise
-        """好用的noise"""
-        # self.kw = torch.tensor([1., 5., 100., 1., 5., 100., 1., 5., 100.]).to(self.args['device'])  # noise deviation
-        # self.bw = torch.tensor([2., 10., 200., 2., 10., 200., 2., 10., 200.]).to(self.args['device'])  # noise bound
-        '''最近用的'''
-        # self.kw = torch.tensor([0.5, 2.5, 50., 0.5, 2.5, 50., 0.5, 2.5, 50.]).to(self.args['device'])  # noise deviation
-        # self.bw = torch.tensor([1., 5., 100., 1., 5., 100., 1., 5., 100.]).to(self.args['device'])  # noise bound
-        '''论文上写的'''
+
         self.kw = torch.tensor([0.7, 0.7, 3.5, 0.7, 0.7, 3.5, 0.7, 0.7, 3.5]).to(self.args['device'])  # noise deviation
         self.bw = torch.tensor([5., 5., 10., 5., 5., 10., 5., 5., 10.]).to(self.args['device'])  # noise bound
-
-        # # 小噪声画loss的图，noise不大的时候确实加pi效果好很多
-        # self.kw = torch.tensor([0.1, 0.1, 10., 0.1, 0.1, 10., 0.1, 0.1, 10.]).to(self.args['device'])  # noise deviation
-        # self.bw = torch.tensor([1., 10., 100., 1., 10., 100., 1., 10., 100.]).to(self.args['device'])  # noise bound
-
-        # """新换的"""
-        # self.kw = torch.tensor([0.5, 2., 10., 0.5, 2., 10., 0.5, 2., 10.]).to(self.args['device'])  # noise deviation
-        # self.bw = torch.tensor([1, 4., 20., 1, 4., 20., 1, 4., 20.]).to(self.args['device'])  # noise bound
 
         self.xs = torch.tensor([0.1763, 0.6731, 480.3165, 0.1965, 0.6536, 472.7863, 0.0651, 0.6703, 474.8877]).to(self.args['device'])
         self.us = 1.12 * np.array([2.9e9, 1.0e9, 2.9e9])
@@ -127,7 +112,6 @@ class three_tank_system(gym.Env):
 
     def reset(self):
         self.a_holder = self.action_space.sample()
-        # self.state = np.random.uniform(0.8, 1.2) * self.xs + np.random.normal(np.zeros_like(self.xs), self.xs*0.01)
         self.state = (torch.rand_like(self.xs) * 0.2 + 1) * self.xs + torch.randn_like(self.xs) * (self.xs * 0.01)
         self.t = 0
         self.time = 0

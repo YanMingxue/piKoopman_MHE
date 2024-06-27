@@ -92,43 +92,53 @@ class ReplayMemory():
         x = []
         u = []
 
-        # Define progress bar
-        bar = progressbar.ProgressBar(maxval=args['total_data_size']).start()
-        length_list = []
-        done_list = []
-        # Loop through episodes
-        while True:
-            # Define arrays to hold observed states and actions in each trial
-            x_trial = torch.zeros((args['max_ep_steps'], args['state_dim']), dtype=torch.float32)
-            # u_trial = torch.zeros((args['max_ep_steps']-1, args['act_dim']), dtype=torch.float32)
-            # Reset environment and simulate with random actions
-            x_trial[0] = self.env.reset()
-            self.action = self.env.get_action(args['max_ep_steps']-1)
-            for t in range(1, args['max_ep_steps']):
-                step_info = self.env.step(t, self.action)
-                # print(u_trial.shape)  #(399, 2)
-                # print(step_info[1].shape)
-                # print(np.squeeze(step_info[0]).shape)
-                # u_trial[t - 1] = step_info[1]
-                x_trial[t] = torch.squeeze(step_info[0])
+        # every trajectory reset the environment
+        # # Define progress bar
+        # bar = progressbar.ProgressBar(maxval=args['total_data_size']).start()
+        # length_list = []
+        # done_list = []
+        # # Loop through episodes
+        # while True:
+        #     # Define arrays to hold observed states and actions in each trial
+        #     x_trial = torch.zeros((args['max_ep_steps'], args['state_dim']), dtype=torch.float32)
+        #     # Reset environment and simulate with random actions
+        #     x_trial[0] = self.env.reset()
+        #     self.action = self.env.get_action(args['max_ep_steps']-1)
+        #     for t in range(1, args['max_ep_steps']):
+        #         step_info = self.env.step(t, self.action)
+        #         x_trial[t] = torch.squeeze(step_info[0])
+        #
+        #         if step_info[3]['data_collection_done']:
+        #             break
+        #
+        #     done_list.append(step_info[3]['data_collection_done'])
+        #     length_list.append(t)
+        #     j = 0
+        #     while j + self.seq_length < len(x_trial):
+        #         x.append(x_trial[j:j + self.seq_length])
+        #         # u.append(self.u_trial[j:j + self.seq_length - 1])
+        #         u.append(self.action[j:j + self.seq_length-1])
+        #         j+=1
+        #
+        #     if len(x) >= args['total_data_size']:
+        #         break
+        #     bar.update(len(x))
+        # bar.finish()
 
-                if step_info[3]['data_collection_done']:
-                    break
-
-            done_list.append(step_info[3]['data_collection_done'])
-            length_list.append(t)
-            j = 0
-            while j + self.seq_length < len(x_trial):
-                x.append(x_trial[j:j + self.seq_length])
-                # u.append(self.u_trial[j:j + self.seq_length - 1])
-                u.append(self.action[j:j + self.seq_length-1])
-                j+=1
-
-            if len(x) >= args['total_data_size']:
-                break
-            bar.update(len(x))
-        bar.finish()
-
+        # Continuous open-loop generation
+        x_trial = torch.zeros((args['total_data_size'] * args['pred_horizon'], args['state_dim']), dtype=torch.float32)
+        x_trial[0] = self.env.reset()
+        self.action = self.env.get_action(args['total_data_size'] * args['pred_horizon'] - 1)
+        bar = progressbar.ProgressBar(max_value=args['total_data_size'] * args['pred_horizon']).start()
+        for t in bar(range(1, args['total_data_size'] * args['pred_horizon'])):
+            step_info = self.env.step(t, self.action)
+            x_trial[t] = torch.squeeze(step_info[0])
+        j = 0
+        while j + self.seq_length < len(x_trial):
+            x.append(x_trial[j:j + self.seq_length])
+            u.append(self.action[j:j + self.seq_length - 1])
+            j += 1 + self.seq_length
+            bar.update(j)  # Update progress bar
 
         # Generate test scenario
         self.x_test = []
@@ -144,8 +154,6 @@ class ReplayMemory():
 
         x = torch.stack(x).to(args['device'])
         u = torch.stack(u).to(args['device']).float()
-        # print(u.shape)  # (30104, 15, 3)   (300, 3)
-        # Reshape and trim data sets
         self.x = x.reshape(-1, self.seq_length, args['state_dim']).to(args['device'])
         self.u = u.reshape(-1, self.seq_length-1, args['act_dim']).to(args['device'])
         len_x = int(np.floor(len(self.x)/args['batch_size'])*args['batch_size'])
@@ -156,11 +164,8 @@ class ReplayMemory():
         self.shift_ = self.dataset_train.determine_shift_and_scale(args)
         self.dataset_train.shift_scale()
 
-        # x = np.array(self.x_test)
         x = torch.stack(self.x_test).to(args['device'])
         u = self.u_test[:-1, :]
-        # u = np.array(self.u_test)
-        # u = np.array(self.u_test[:-1, :])
 
         # Reshape and trim data sets
         self.x_test = x.reshape(-1, x.shape[0], args['state_dim']).to(args['device'])

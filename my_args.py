@@ -1,20 +1,18 @@
 args = {
-    'batch_size': 100,
+    'batch_size': 256,
     'pred_horizon': 20,
     'mhe_horizon': 45,
     # latent dimension
-    # 'latent_dim': 13,  # Koopman 变换后的向量数量
-    # 'latent_dim': 18,  # Koopman 变换后的向量数量
-    'latent_dim': 13,  # Koopman 变换后的向量数量
+    'latent_dim': 13,  # lifted dimension
     'state_dim': 9,
     'output_dim': 3,
     'act_dim': 3,
     'seed': 7,
     # import data
     'import_saved_data': False,
-    'continue_data_collection': False,  # 是否连续训练
+    'continue_data_collection': False,  # if True: continue training
 
-    'total_data_size': 10000,
+    'total_data_size': 2000,
 
     'max_ep_steps': 300,
     'test_steps': 10,
@@ -38,14 +36,14 @@ args = {
 
     # 'if_pi': True,
     'if_pi': False,
-    'reload_data': True,
-    # 'reload_data': False,
+    'reload_data': False,  # Use previous dataset
+    # 'reload_data': False,  # Regenerate new dataset
     # 'if_sigma': True,
     'if_sigma': False,
 
     'plot_test': True,
     'optimize_step': 20,
-    'act_expand': 1,  # 输入拓展的维数
+    # 'act_expand': 1,  # do not expand the input
 
     'MODEL_SAVE': "save_model/model_v1.pt",
     'NOISE_SAVE': "save_model/noise.pt",
@@ -58,7 +56,6 @@ args = {
     # 'SAVE_A1': "nopi_model/A1.pt",
     # 'SAVE_B1': "nopi_model/B1.pt",
     # 'SAVE_C1': "nopi_model/C1.pt",
-
 
     'SAVE_OPTI1': "save_model/opti1_v1.pt",
     'SAVE_OPTI2': "save_model/opti2_v1.pt",

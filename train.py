@@ -6,6 +6,7 @@ from three_tanks import three_tank_system as dreamer
 # from CSTR import CSTR_system as dreamer
 from torch.utils.data import Dataset, DataLoader, random_split
 import my_args
+import os
 import matplotlib.pyplot as plt
 # import matplotlib
 # matplotlib.use('TkAgg')
@@ -17,8 +18,12 @@ def main():
     for i in range(1):
         print("Process number: {}".format(i))
         args = my_args.args
-        args['act_expand'] = 1
+        args['act_expand'] = 1  # use original input
         args['device'] = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if args['if_pi']:
+            args['result_type'] = 'pi'
+        else:
+            args['result_type'] = 'nopi'
         print("Device is : ", args['device'])
         # args = VARIANT
         env = dreamer(args)
@@ -31,16 +36,28 @@ def main():
 
         test_mse.append(test_loss)
         test_curve_total.append(test_curve)
-        torch.save(test_mse, "save_model/test_error.pt")
-        torch.save(test_curve_total, "save_model/test_curve.pt")
+        torch.save(test_mse, 'open_loop_result/'+args['result_type']+'/test_error.pt')
+        torch.save(test_curve_total, 'open_loop_result/'+args['result_type']+'/test_curve.pt')
 
         print("test_error:", test_mse)
         clear()
     print(test_curve_total)
     print("done!")
 
+def create_directories(directory_list):
+    for directory in directory_list:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            print(f"Created directory '{directory}'.")
+        else:
+            print(f"Directory '{directory}' already exists.")
+
 
 def train(args, env):
+
+    directory_list = ["save_model", "open_loop_result/pi", "open_loop_result/nopi"]
+    create_directories(directory_list)
+
     test_curve = []
     test_mse = 1e9
     if not args['if_mix']:
@@ -53,7 +70,6 @@ def train(args, env):
         replay_memory = ReplayMemory(args, env, predict_evolution=True)
     # replay_memory = ReplayMemory(args, env, predict_evolution=True)
     # model.set_shift_and_scale(replay_memory)
-
     #############################00000000000#########################
     if args['reload_data'] == True:
         print('Reload dataset...')
@@ -69,7 +85,7 @@ def train(args, env):
         x_val = replay_memory.val_subset
 
     ##-----------continue train------------##
-    args['restore'] = True
+    args['restore'] = False
     if args['restore'] == True:
         model.parameter_restore(args)
 
@@ -98,12 +114,10 @@ def train(args, env):
         if test_loss < test_mse:
             test_mse = test_loss
 
-        break
-
     print("train curve:", train_list)
     print("save train and val curve...")
-    torch.save(train_list, "save_model/train_list.pt")
-    torch.save(val_list, "save_model/val_list.pt")
+    torch.save(train_list, 'open_loop_result/'+args['result_type']+'/train_list.pt')
+    torch.save(val_list, 'open_loop_result/'+args['result_type']+'/val_list.pt')
 
     return test_mse, test_curve
 

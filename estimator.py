@@ -227,17 +227,10 @@ def estimate(env, args):
     x_est_nopi = x_est_nopi * shift[1].cpu().numpy() + shift[0].cpu().numpy()
     x_est_pi = x_est_pi * shift[1].cpu().numpy() + shift[0].cpu().numpy()
 
-
-
     """save curve"""
     torch.save(x_test, "result/x_test_1.pt")
     torch.save(x_est_pi, "result/x_est_pi_1.pt")
     torch.save(x_est_nopi, "result/x_est_nopi_1.pt")
-
-    # """reload curve and plot"""
-    # x_test = torch.load("result/x_test.pt")
-    # x_est = torch.load("result/x_est_pi.pt")
-    # x_est2 = torch.load("result/x_est_withoutpi.pt")
 
     color1 = "#038355"  # 孔雀绿
     color2 = "#ffc34e"  # 向日黄
