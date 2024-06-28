@@ -287,7 +287,6 @@ class Koopman_Desko(object):
 
 
         x_pred_matrix = torch.zeros_like(x[:,1:,:])
-        # y_pred_matrix = torch.zeros_like(x[:, 1:, :])
         x_pred_matrix_all = torch.zeros([x.shape[0],x.shape[1]-1,args['latent_dim']]).to(args['device'])
         x_pred_matrix_n = torch.zeros_like(x[:, 1:, :])
         x_pred_matrix_all_n = torch.zeros([x.shape[0], x.shape[1] - 1, args['latent_dim']]).to(args['device'])
@@ -343,7 +342,7 @@ class Koopman_Desko(object):
             ##########################
             # --------------physics informed----------------- #
             system = physics(args)
-            x_pred_matrix_re = x_pred_matrix * shift[1] + shift[0]
+            x_pred_matrix_re = x_pred_matrix_n * shift[1] + shift[0]
             u_re = u * shift[3] + shift[2]
 
             # ############################
@@ -352,7 +351,7 @@ class Koopman_Desko(object):
             '''
             dxk_s = system.derivative(x_pred_matrix_re[:, :-1, :], u_re[:, 1:, :]) * system.h
             dxk = (dxk_s - shift[0]) / shift[1]
-            pred_dxk = x_pred_matrix[:, 1:, :] - x_pred_matrix[:, :-1, :]
+            pred_dxk = x_pred_matrix_n[:, 1:, :] - x_pred_matrix_n[:, :-1, :]
             # self.p2_loss += 0.5 * loss(dxk[:, :, :], pred_dxk[:, :, :])
             self.p2_loss += 0.1 * loss(dxk[:, :, self.select], pred_dxk[:, :, self.select])
 
@@ -377,8 +376,8 @@ class Koopman_Desko(object):
         else:
             self.loss = self.d_loss
 
-        self.displace1 = x_pred[7,:]
-        self.displace2 = x[7, i+1, :]
+        # self.displace1 = x_pred[7,:]
+        # self.displace2 = x[7, i+1, :]
 
 
     def pred_forward_test(self,x,u,shift,test,args,e=0,test_save=True):
@@ -423,7 +422,7 @@ class Koopman_Desko(object):
                 x_time_list = np.array(x_time_list)
 
              ##------------------- plot -----------------##
-                color1 = "#038355"  # 孔雀绿
+                color1 = "#038355"
                 font = {'family': 'Times New Roman', 'size': 12}
                 titles = ['XA1', 'XB1', 'T1',
                           'XA2', 'XB2', 'T2',

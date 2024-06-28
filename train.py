@@ -55,21 +55,20 @@ def create_directories(directory_list):
 
 def train(args, env):
 
-    directory_list = ["save_model", "open_loop_result/pi", "open_loop_result/nopi"]
+    directory_list = ["save_model/pi", "save_model/nopi", "open_loop_result/pi", "open_loop_result/nopi"]
     create_directories(directory_list)
 
     test_curve = []
     test_mse = 1e9
-    if not args['if_mix']:
-        from Desko import Koopman_Desko
-    else:
-        from mix_u import Koopman_Desko
+    # if not args['if_mix']:
+    #     from Desko import Koopman_Desko
+    # else:
+    #     from mix_u import Koopman_Desko
+    from Desko import Koopman_Desko
     model = Koopman_Desko(args)
-    # model.parameter_restore(args)
+
     if args['reload_data'] == False:
         replay_memory = ReplayMemory(args, env, predict_evolution=True)
-    # replay_memory = ReplayMemory(args, env, predict_evolution=True)
-    # model.set_shift_and_scale(replay_memory)
     #############################00000000000#########################
     if args['reload_data'] == True:
         print('Reload dataset...')

@@ -54,7 +54,6 @@ class three_tank_system(gym.Env):
         self.Hvap2 = -torch.tensor(15.7E3).to(self.args['device']) * self.sum_c
         self.Hvap3 = -torch.tensor(40.68E3).to(self.args['device']) * self.sum_c
 
-
         self.kw = torch.tensor([0.7, 0.7, 3.5, 0.7, 0.7, 3.5, 0.7, 0.7, 3.5]).to(self.args['device'])  # noise deviation
         self.bw = torch.tensor([5., 5., 10., 5., 5., 10., 5., 5., 10.]).to(self.args['device'])  # noise bound
 
@@ -62,6 +61,8 @@ class three_tank_system(gym.Env):
         self.us = 1.12 * np.array([2.9e9, 1.0e9, 2.9e9])
 
         high = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1])
+        self.state_high = torch.tensor([0.5, 1., 700., 0.5, 1., 700., 0.5, 1., 700.]).to(self.args['device'])
+        self.state_low = torch.tensor([0., 0., 0., 0., 0., 0., 0., 0., 0.]).to(self.args['device'])
 
         self.action_low = 0.2 * self.us
         self.action_high = 1.5 * self.us
@@ -102,7 +103,6 @@ class three_tank_system(gym.Env):
             x0 = x0 + self.derivative(x0, action)*self.h + process_noise*self.h
         self.state = x0
         self.t += 1
-        
         # cost = np.linalg.norm(self.state - self.reference)
         cost = torch.norm(self.state - self.reference)
         done = False
