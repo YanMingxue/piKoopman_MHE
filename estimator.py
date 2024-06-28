@@ -228,10 +228,7 @@ def estimate(env, args, test_pi = False, test_sigma = True):
             print("step:{}; x_true:{},x_pred{}".format(t, y, x_est_nopi[t, :]))
 
         err_nopi = mse_np(x_est_nopi, x_test[:-1, :])
-
-
         print("ERROR without pi:{}; with pi:{}".format(err_nopi, err_pi))
-
         x_test = x_test * shift[1].cpu().numpy() + shift[0].cpu().numpy()
         x_est_nopi = x_est_nopi * shift[1].cpu().numpy() + shift[0].cpu().numpy()
         x_est_pi = x_est_pi * shift[1].cpu().numpy() + shift[0].cpu().numpy()
@@ -317,8 +314,10 @@ def estimate(env, args, test_pi = False, test_sigma = True):
             estimator_2.update(u_test[t, :])
             print("step:{}; x_true:{},x_pred{}".format(t, y, x_est_s[t, :]))
         err_s = mse_np(x_est_s, x_test[:-1, :])
-        print("ERROR fixed weights:{}; adaptive weights:{}".format(err_nos, err_s))
-
+        conclusion = "ERROR fixed weights:{}; adaptive weights:{}".format(err_nos, err_s)
+        print(conclusion)
+        with open('estimation_result/noise/conclusion.txt', 'w') as file:
+            file.write(conclusion)
         x_test = x_test * shift[1].cpu().numpy() + shift[0].cpu().numpy()
         x_est_nos = x_est_nos * shift[1].cpu().numpy() + shift[0].cpu().numpy()
         x_est_s = x_est_s * shift[1].cpu().numpy() + shift[0].cpu().numpy()
