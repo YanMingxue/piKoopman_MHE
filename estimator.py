@@ -50,7 +50,7 @@ class MHE:
         self.C = self.C_full[:, self.select]
 
         # constraints
-        self.state_scale = 10*np.ones(self.state_dim)
+        self.state_scale = 1.5*np.ones(self.state_dim)
         self.bw = 5*np.ones(self.latent_dim+self.state_dim)
 
         # history of measurements and applied controls
@@ -81,6 +81,7 @@ class MHE:
         log_sigma = torch.clamp(log_sigma, min=SCALE_DIAG_MIN_MAX[0], max=SCALE_DIAG_MIN_MAX[1])
         self.sigma = torch.exp(log_sigma)
         self.sigma = torch.pow(self.sigma, 2)
+        # self.sigma = self.sigma / torch.max(self.sigma)
         self.sigma_inv = 1.0/self.sigma
         self.sigma_inv = scale_sigma(self.sigma_inv)
         sigma_diag = self.sigma_inv.numpy()
@@ -126,12 +127,12 @@ class MHE:
                         g[i + 1, :] == g[i, :] @ self.A + self.u_history[i] @ self.B + w[i, :]
                         )
                 cons.append(x[i, :] == g[i, :] @ self.C_full)
-                # cons.append(x[i, :] <= self.state_scale)
-                # cons.append(x[i, :] >= -self.state_scale)
+                cons.append(x[i, :] <= self.state_scale)
+                cons.append(x[i, :] >= -self.state_scale)
                 # l_error += cp.quad_form(w[i, :],self.Q)
                 l = cp.quad_form(self.y_array[i, self.select] - x[i, self.select], self.R) + cp.quad_form(w[i, :], self.Q)
-                # cons.append(w[i, :] <= self.bw)
-                # cons.append(w[i, :] >= -self.bw)
+                cons.append(w[i, :] <= self.bw)
+                cons.append(w[i, :] >= -self.bw)
                 l_error += l
                 cons.append(l <= self.max_l)
             obj = cp.quad_form(g[0, :] - self.g0, self.Q) + l_error + self.max_l
@@ -204,7 +205,7 @@ def estimate(env, args, test_pi = False, test_sigma = True):
             print("step:{}; x_true:{},x_pred{}".format(t, y, x_est_pi[t, :]))
         err_pi = mse_np(x_est_pi, x_test[:-1, :])
 
-        print("----------------without pi-----------------")
+        print("---------------- without pi -----------------")
         args['if_sigma'] = False
         args['MODEL_SAVE'] = address_nopi +'model_v1.pt'
         args['SAVE_A1'] = address_pi +'A1.pt'
@@ -265,9 +266,33 @@ def estimate(env, args, test_pi = False, test_sigma = True):
         plt.show()
 
     if test_sigma:
-        print("----------------without sigma-----------------")
+        print("----------------Baseline: without sigma and PI-----------------")
         args['if_sigma'] = False
         # introduce model
+        args['MODEL_SAVE'] = address_nopi + 'model_v1.pt'
+        # pre-trained noise generate model
+        args['NOISE_SAVE'] = address_noise + 'noise.pt'
+        args['SAVE_A1'] = address_nopi + 'A1.pt'
+        args['SAVE_B1'] = address_nopi + 'B1.pt'
+        args['SAVE_C1'] = address_nopi + 'C1.pt'
+        model = restore_data(args)
+        A = model.A_1.detach().numpy()
+        B = model.B_1.detach().numpy()
+        g0_holder = model.net(x0_buff)
+        g0_holder = torch.cat([x0_buff, g0_holder]).detach().numpy()
+        g0_guess = 1.2 * g0_holder
+        """MHE initial with g0 guess"""
+        estimator_1 = MHE(A, B, g0_guess, H, x_std, shift, model, args)
+        x_est_nos = np.zeros((x_test.shape[0] - 1, args['state_dim']))
+        for t in range(x_test.shape[0] - 1):
+            y = x_test[t, :]
+            x_est_nos[t, :] = estimator_1(y, args)
+            estimator_1.update(u_test[t, :])
+            print("step:{}; x_true:{},x_pred{}".format(t, y, x_est_nos[t, :]))
+        err_nos = mse_np(x_est_nos, x_test[:-1, :])
+
+        print("----------------with sigma and PI-----------------")
+        args['if_sigma'] = True
         args['MODEL_SAVE'] = address_pi + 'model_v1.pt'
         # pre-trained noise generate model
         args['NOISE_SAVE'] = address_noise + 'noise.pt'
@@ -281,20 +306,9 @@ def estimate(env, args, test_pi = False, test_sigma = True):
         g0_holder = torch.cat([x0_buff, g0_holder]).detach().numpy()
         g0_guess = 1.2 * g0_holder
         """MHE initial with g0 guess"""
-        estimator_1 = MHE(A_pi, B_pi, g0_guess, H, x_std, shift, model_pi, args)
-        x_est_nos = np.zeros((x_test.shape[0] - 1, args['state_dim']))
-
-        for t in range(x_test.shape[0] - 1):
-            y = x_test[t, :]
-            x_est_nos[t, :] = estimator_1(y, args)
-            estimator_1.update(u_test[t, :])
-            print("step:{}; x_true:{},x_pred{}".format(t, y, x_est_nos[t, :]))
-        err_nos = mse_np(x_est_nos, x_test[:-1, :])
-
-        print("----------------with sigma-----------------")
-        args['if_sigma'] = True
-        """MHE initial with g0 guess"""
         estimator_2 = MHE(A_pi, B_pi, g0_guess, H, x_std, shift, model_pi, args)
+        # """MHE initial with g0 guess"""
+        # estimator_2 = MHE(A_pi, B_pi, g0_guess, H, x_std, shift, model_pi, args)
         x_est_s = np.zeros((x_test.shape[0] - 1, args['state_dim']))
         for t in range(x_test.shape[0] - 1):
             y = x_test[t, :]
@@ -342,20 +356,10 @@ def shift_scale(x, u, shift_ = None):
     u_choice = (u - shift_[2])/shift_[3]
     return x_choice, u_choice
 
-
 def shift_rescale(x, u, shift_ = None):
     x_re = x * shift_[1].numpy() + shift_[0].numpy()
     u_re = u * shift_[3].numpy() + shift_[2].numpy()
     return x_re, u_re
-
-# def shift_minmax(x, u, shift_ = None):
-#     x_choice = (x - shift_[1])/(shift_[0]-shift_[1])
-#     u_choice = (u - shift_[3])/(shift_[2]-shift_[3])
-#     return x_choice, u_choice
-#
-# def shift_reminmax(x, shift_ = None):
-#     x_re = x * (shift_[0].numpy-shift_[1].numpy) + shift_[1].numpy
-#     return x_re
 
 def restore_data(args):
     args['if_mix'] = False
@@ -364,7 +368,6 @@ def restore_data(args):
     # restore variables
     model.parameter_restore(args)
     return model
-
 
 def mse_measure(list_true, list_pred):
     if len(list_true) != len(list_pred):
@@ -377,7 +380,6 @@ def mse_measure(list_true, list_pred):
     mse = np.mean(mse_list)
     return mse
 
-
 def mse_np(x, y):
     assert x.shape == y.shape, "Arrays must have the same shape"
     squared_diff = (x - y) ** 2
@@ -385,13 +387,12 @@ def mse_np(x, y):
     mse_value = sum_squared_diff / np.prod(x.shape)
     return mse_value
 
-
 def scale_sigma(sigma):
     min_val = torch.min(sigma)
     max_val = torch.max(sigma)
     range = max_val - min_val
-    target_min = 0.9
-    target_max = 1.1
+    target_min = 0.7
+    target_max = 1.0
     scale = (target_max - target_min) / range
     normalized_sigma = (sigma - min_val) * scale + target_min
     return normalized_sigma

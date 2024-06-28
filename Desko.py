@@ -9,17 +9,10 @@ import torch.optim as optim
 import torch.distributions as torchd
 from torch.utils.data import Dataset, DataLoader, random_split
 from matplotlib import pyplot as plt
-import torch.nn.functional as F
-
-from three_tanks import three_tank_system
 
 #===========for matplotlib==============#
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
-
-
-
 
 SCALE_DIAG_MIN_MAX = (-20, 2)
 def weights_init(m):
@@ -288,8 +281,8 @@ class Koopman_Desko(object):
 
         x_pred_matrix = torch.zeros_like(x[:,1:,:])
         x_pred_matrix_all = torch.zeros([x.shape[0],x.shape[1]-1,args['latent_dim']]).to(args['device'])
-        x_pred_matrix_n = torch.zeros_like(x[:, 1:, :])
-        x_pred_matrix_all_n = torch.zeros([x.shape[0], x.shape[1] - 1, args['latent_dim']]).to(args['device'])
+        # x_pred_matrix_n = torch.zeros_like(x[:, 1:, :])
+        # x_pred_matrix_all_n = torch.zeros([x.shape[0], x.shape[1] - 1, args['latent_dim']]).to(args['device'])
 
         self.w_mean = torch.zeros(args['batch_size'], args['state_dim'] + args['latent_dim']).to(args['device'])
         base_distribution = dist.MultivariateNormal(torch.zeros(args['latent_dim'] + args['state_dim']),
@@ -298,9 +291,9 @@ class Koopman_Desko(object):
 
         SCALE_DIAG_MIN_MAX = (-20, 2)
         if args['if_sigma']: # Trained with the noise characteristic network
-            x0_n = x0
+            # x0_n = x0
             # assume sigma remain the same within one forward prediction window
-            log_sigma = self.noisemlp(x0_n)
+            log_sigma = self.noisemlp(x0)
             log_sigma = torch.clamp(log_sigma, min=SCALE_DIAG_MIN_MAX[0], max=SCALE_DIAG_MIN_MAX[1])
             self.sigma = torch.exp(log_sigma)
             bijector = transforms.AffineTransform(loc=self.w_mean, scale=self.sigma)
@@ -311,38 +304,37 @@ class Koopman_Desko(object):
                 # self.w = bijector(self.epsilon[:, :, i, :])
                 # # self.w = self.w_mean + self.e_sigma * self.epsilon[:, :, i]
                 # self.w = self.w.squeeze()
-                x0_n = torch.matmul(x0_n,self.A_1)+torch.matmul(u[:,i,:],self.B_1) + self.w
-                x_pred_n = torch.matmul(x0_n, self.C_1)
-                x_pred_matrix_all_n[:,i,:] = x0_n[:, -args['latent_dim']:]
-                x_pred_matrix_n[:,i,:] = x_pred_n
-
-        for i in range(pred_horizon-1):
-            x0 = torch.matmul(x0,self.A_1)+torch.matmul(u[:,i,:],self.B_1)
-            x_pred = torch.matmul(x0,self.C_1)
-            x_pred_matrix_all[:,i,:] = x0[:, -args['latent_dim']:]
-            x_pred_matrix[:,i,:] = x_pred
+                x0 = torch.matmul(x0,self.A_1)+torch.matmul(u[:,i,:],self.B_1) + self.w
+                x_pred = torch.matmul(x0, self.C_1)
+                x_pred_matrix_all[:,i,:] = x0[:, -args['latent_dim']:]
+                x_pred_matrix[:,i,:] = x_pred
+        else:
+            for i in range(pred_horizon-1):
+                x0 = torch.matmul(x0,self.A_1)+torch.matmul(u[:,i,:],self.B_1)
+                x_pred = torch.matmul(x0,self.C_1)
+                x_pred_matrix_all[:,i,:] = x0[:, -args['latent_dim']:]
+                x_pred_matrix[:,i,:] = x_pred
 
 
         self.select = [2, 5, 8]
-        d_loss, p2_loss, p3_loss = 0., 0., 0.
-        if args['if_sigma']:
-            self.d_loss += loss(x_pred_matrix_n[:, :, :], x[:, 1:, :]) * 10
-            self.d_loss += loss(x_pred_all[:, :, :], x_pred_matrix_all_n[:, :, :])
-            # -----------terminal constraints-----------##
-            self.d_loss += loss(x_pred_matrix_n[:, -1, :], x[:, -1, :]) * 10
-            self.d_loss += loss(x_pred_all[:, -1, :], x_pred_matrix_all_n[:, -1, :])
-        else:
-            self.d_loss += loss(x_pred_matrix[:, :, :], x[:, 1:, :]) * 10
-            self.d_loss += loss(x_pred_all[:, :, :], x_pred_matrix_all[:, :, :])
-            # -----------terminal constraints-----------##
-            self.d_loss += loss(x_pred_matrix[:, -1, :], x[:, -1, :]) * 10
-            self.d_loss += loss(x_pred_all[:, -1, :], x_pred_matrix_all[:, -1, :])
+        # if args['if_sigma']:
+        #     self.d_loss += loss(x_pred_matrix_n[:, :, :], x[:, 1:, :]) * 10
+        #     self.d_loss += loss(x_pred_all[:, :, :], x_pred_matrix_all_n[:, :, :])
+        #     # -----------terminal constraints-----------##
+        #     self.d_loss += loss(x_pred_matrix_n[:, -1, :], x[:, -1, :]) * 10
+        #     self.d_loss += loss(x_pred_all[:, -1, :], x_pred_matrix_all_n[:, -1, :])
+        # else:
+        self.d_loss += loss(x_pred_matrix[:, :, :], x[:, 1:, :]) * 10
+        self.d_loss += loss(x_pred_all[:, :, :], x_pred_matrix_all[:, :, :])
+        # -----------terminal constraints-----------##
+        self.d_loss += loss(x_pred_matrix[:, -1, :], x[:, -1, :]) * 10
+        self.d_loss += loss(x_pred_all[:, -1, :], x_pred_matrix_all[:, -1, :])
 
         if args['if_pi']:
             ##########################
             # --------------physics informed----------------- #
             system = physics(args)
-            x_pred_matrix_re = x_pred_matrix_n * shift[1] + shift[0]
+            x_pred_matrix_re = x_pred_matrix * shift[1] + shift[0]
             u_re = u * shift[3] + shift[2]
 
             # ############################
@@ -351,10 +343,9 @@ class Koopman_Desko(object):
             '''
             dxk_s = system.derivative(x_pred_matrix_re[:, :-1, :], u_re[:, 1:, :]) * system.h
             dxk = (dxk_s - shift[0]) / shift[1]
-            pred_dxk = x_pred_matrix_n[:, 1:, :] - x_pred_matrix_n[:, :-1, :]
+            pred_dxk = x_pred_matrix[:, 1:, :] - x_pred_matrix[:, :-1, :]
             # self.p2_loss += 0.5 * loss(dxk[:, :, :], pred_dxk[:, :, :])
             self.p2_loss += 0.1 * loss(dxk[:, :, self.select], pred_dxk[:, :, self.select])
-
             ############################
             '''
             loss3 partial: g(xk+1) = g(f(xk,uk))
@@ -375,9 +366,6 @@ class Koopman_Desko(object):
                         + 200 * (torch.log(1 + pow(self.d, 2)) + torch.log(1 + pow(self.p2, 2)) + torch.log(1 + pow(self.p3, 2)))
         else:
             self.loss = self.d_loss
-
-        # self.displace1 = x_pred[7,:]
-        # self.displace2 = x[7, i+1, :]
 
 
     def pred_forward_test(self,x,u,shift,test,args,e=0,test_save=True):
@@ -516,7 +504,8 @@ class Koopman_Desko(object):
         #save nn
         torch.save(self.net_para,self.MODEL_SAVE)
         #save noise sigma
-        torch.save(self.noise_para, self.NOISE_SAVE)
+        if args['if_sigma']:
+            torch.save(self.noise_para, self.NOISE_SAVE)
         #save A1 B1 C1
         torch.save(self.A_1_restore,self.SAVE_A1)
         torch.save(self.B_1_restore,self.SAVE_B1)

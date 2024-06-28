@@ -1,8 +1,7 @@
-# if_pi = False
-if_pi = True
-
-# if_sigma = False
-if_sigma = True
+if_pi = False
+# if_pi = True
+if_sigma = False
+# if_sigma = True
 
 args = {
     'batch_size': 400,  # 256
@@ -22,13 +21,13 @@ args = {
     'max_ep_steps': 300,
     'test_steps': 10,
     'max_test_ep_steps': 100,
-    'mhe_test_length': 10,
+    'mhe_test_length': 20,
     'ABCD': 1,
     'val_frac': 0.2,
     'lr1': 0.01,
     'lr2': 0.001,
     'lr3': 0.01,
-    'gamma': 0.8,
+    'gamma': 0.6,
     # 'mix_x_u': 3,
     # 'if_mix': False,
     'num_epochs': 151,
@@ -52,9 +51,9 @@ args = {
     'SAVE_SHIFT': "save_model/shift.pt",
     'SAVE_TEST_X': "save_model/test_x.pt",
     'SAVE_TEST_U': "save_model/test_u.pt",
-    'NOISE_SAVE' : "save_model/noise.pt",
 
     'MODEL_SAVE' : "save_model/pi/model_v1.pt" if if_pi else "save_model/nopi/model_v1.pt",
+    'NOISE_SAVE' : "save_model/pi/noise.pt" if if_pi else "save_model/nopi/noise.pt",
     'SAVE_A1' : "save_model/pi/A1.pt"if if_pi else "save_model/nopi/A1.pt",
     'SAVE_B1' : "save_model/pi/B1.pt"if if_pi else "save_model/nopi/B1.pt",
     'SAVE_C1' : "save_model/pi/C1.pt"if if_pi else "save_model/nopi/C1.pt",

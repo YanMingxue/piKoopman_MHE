@@ -87,7 +87,6 @@ def train(args, env):
     args['restore'] = False
     if args['restore'] == True:
         model.parameter_restore(args)
-
     if args['reload_data'] == True:
         test_data = DataLoader(dataset=dataset_test, batch_size=1, shuffle=True, drop_last=True)
     else:
