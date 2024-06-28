@@ -60,10 +60,6 @@ def train(args, env):
 
     test_curve = []
     test_mse = 1e9
-    # if not args['if_mix']:
-    #     from Desko import Koopman_Desko
-    # else:
-    #     from mix_u import Koopman_Desko
     from Desko import Koopman_Desko
     model = Koopman_Desko(args)
 
@@ -87,6 +83,8 @@ def train(args, env):
     args['restore'] = False
     if args['restore'] == True:
         model.parameter_restore(args)
+
+    ##-----------load test data------------##
     if args['reload_data'] == True:
         test_data = DataLoader(dataset=dataset_test, batch_size=1, shuffle=True, drop_last=True)
     else:

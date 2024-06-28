@@ -50,7 +50,8 @@ class MHE:
         self.C = self.C_full[:, self.select]
 
         # constraints
-        self.state_scale = 1.5*np.ones(self.state_dim)
+        # self.state_scale = 1.5*np.ones(self.state_dim)
+        self.state_scale = np.array([3., 3., 6., 3., 3., 6., 3., 3., 6.])
         self.bw = 5*np.ones(self.latent_dim+self.state_dim)
 
         # history of measurements and applied controls
