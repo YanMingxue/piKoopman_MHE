@@ -133,7 +133,7 @@ class Koopman_Desko(object):
 
 
     def _create_koopman_matrix_a1_extend(self, args):
-        #用这个
+        # use this one
         """
         In this approach
         A,B,C,D are regarded as the same as 
@@ -189,81 +189,78 @@ class Koopman_Desko(object):
         pass
 
     def learn(self, e, x_train,x_val,shift,args):
-        self.train_data = DataLoader(dataset = x_train, batch_size = args['batch_size'], shuffle = True, drop_last = True)
-        count = 0
-        
-        for x_,u_ in self.train_data:
+        self.train_data = DataLoader(dataset=x_train, batch_size=args['batch_size'], shuffle=True, drop_last=True)
+        for x_, u_ in self.train_data:
             self.loss = 0
             self.d_loss = 0
             self.p2_loss = 0
             self.p3_loss = 0
-            x_=x_.to(args['device'])
-            u_=u_.to(args['device'])
-            self.pred_forward(x_,u_,shift,args)
-            count += 1
+            x_ = x_.to(args['device'])
+            u_ = u_.to(args['device'])
+            self.pred_forward(x_, u_, shift, args)
 
             self.optimizer1.zero_grad()
             if args['ABCD'] != 2:
                 self.optimizer2.zero_grad()
+            self.optimizer3.zero_grad()
+
             self.loss.backward()
+
             self.optimizer1.step()
             self.optimizer1_sch.step()
             self.optimizer3.step()
             self.optimizer3_sch.step()
 
-
-        if args['ABCD'] != 2:
-            self.optimizer2.step()
-            # self.optimizer2.step()
-            self.optimizer2_sch.step()
+            if args['ABCD'] != 2:
+                self.optimizer2.step()
+                self.optimizer2_sch.step()
 
         if args['if_pi']:
-            loss_buff = self.d_loss / count
+            loss_buff = self.d_loss  # take the loss of the last batch as L_d
         else:
-            loss_buff = self.loss / count
+            loss_buff = self.loss
 
-        if loss_buff<self.loss_buff:
-            # self.C_1_restore = self.C_1
+        if loss_buff < self.loss_buff:
             self.net_para = copy.deepcopy(self.net.state_dict())
             self.noise_para = copy.deepcopy(self.noisemlp.state_dict())
             self.A_1_restore = copy.deepcopy(self.A_1)
             self.B_1_restore = copy.deepcopy(self.B_1)
             self.C_1_restore = copy.deepcopy(self.C_1)
             self.loss_buff = loss_buff
-        #validation_test
-        
-        self.loss = 0
-        self.d_loss = 0
-        self.p1_loss = 0
-        self.p2_loss = 0
-        self.p3_loss = 0
-        count = 0
-        self.val_data = DataLoader(dataset = x_val, batch_size = args['batch_size'], shuffle = True, drop_last = True)
 
-        for x_,u_ in self.val_data:
-            x_=x_.to(args['device'])
-            u_=u_.to(args['device'])
-            self.pred_forward(x_,u_,shift,args)
-            count += 1
+
+        # validation_test
+        self.train_data = DataLoader(dataset=x_val, batch_size=args['batch_size'], shuffle=True, drop_last=True)
+        for x_, u_ in self.train_data:
+            self.loss = 0
+            self.d_loss = 0
+            self.p1_loss = 0
+            self.p2_loss = 0
+            self.p3_loss = 0
+            x_ = x_.to(args['device'])
+            u_ = u_.to(args['device'])
+            self.pred_forward(x_, u_, shift, args)
 
         if args['if_pi']:
-            print('epoch {}: loss_traning data {} loss_val data {} minimal loss {} learning_rate {}'.format(e,loss_buff,self.d_loss/count,self.loss_buff,self.optimizer1_sch.get_last_lr()))
-            return loss_buff,self.d_loss / count
-
+            print(
+                'epoch {}: loss_traning data {} loss_val data {} minimal loss {} learning_rate {}'.format(e, loss_buff,
+                                                                                                          self.d_loss,
+                                                                                                          self.loss_buff,
+                                                                                                          self.optimizer1_sch.get_last_lr()))
+            return loss_buff, self.d_loss
         else:
             print(
                 'epoch {}: loss_traning data {} loss_val data {} minimal loss {} learning_rate {}'.format(e, loss_buff,
-                                                                                                          self.loss / count,
+                                                                                                          self.loss,
                                                                                                           self.loss_buff,
                                                                                                           self.optimizer1_sch.get_last_lr()))
-            return loss_buff, self.loss / count
-
-    def test_(self,test,args):
-        self.test_data = DataLoader(dataset = test, batch_size = 10, shuffle = True)
-        for x_,u_ in self.test_data:
-            x_=x_.to(args['device'])
-            u_=u_.to(args['device'])
-            self.pred_forward_test(x_,u_,args)
+            return loss_buff, self.loss
+    def test_(self, test, args):
+        self.test_data = DataLoader(dataset=test, batch_size=10, shuffle=True)
+        for x_, u_ in self.test_data:
+            x_ = x_.to(args['device'])
+            u_ = u_.to(args['device'])
+            self.pred_forward_test(x_, u_, args)
 
 
     def pred_forward(self,x,u,shift,args):
@@ -276,12 +273,6 @@ class Koopman_Desko(object):
 
         if args['extend_state']:
             x0 = torch.cat([x0_buff,x0],1)
-
-        # if args['act_expand'] > args['act_dim']:
-        #     if args['act_expand']  == 6:
-        #         u = torch.cat([torch.square(u),u],2)
-        #     if args['act_expand']  == 9:
-        #         u = torch.cat([torch.pow(u,3),torch.square(u),u],2)
 
         if args['ABCD'] == 2:
             x1_buff = x[:,1,:]
@@ -332,13 +323,6 @@ class Koopman_Desko(object):
             x_pred_matrix_all[:,i,:] = x0[:, -args['latent_dim']:]
             x_pred_matrix[:,i,:] = x_pred
 
-        # #------------------------------#
-        # self.d_loss += (loss(x_pred_matrix,x[:,1:,:])*10)
-        # self.d_loss += loss(x_pred_all.to(args['device']),x_pred_matrix_all.to(args['device']))
-        # #-----------terminal constraints-----------##
-        # self.d_loss += loss(x_pred_matrix[:,-1,:],x[:,-1,:])*10
-        # self.d_loss += loss(x_pred_all[:,-1,:].to(args['device']),x_pred_matrix_all[:,-1,:].to(args['device']))
-        # ------------------------------#
 
         self.select = [2, 5, 8]
         d_loss, p2_loss, p3_loss = 0., 0., 0.
@@ -358,8 +342,6 @@ class Koopman_Desko(object):
         if args['if_pi']:
             ##########################
             # --------------physics informed----------------- #
-            # system = CSTR_system()
-            # system = three_tank_system(args)
             system = physics(args)
             x_pred_matrix_re = x_pred_matrix * shift[1] + shift[0]
             u_re = u * shift[3] + shift[2]
@@ -388,17 +370,12 @@ class Koopman_Desko(object):
             self.p3_loss += 100 * loss(pred_gxk, gxk)
 
             # self adaptive loss
-            # self.loss = (1/pow(self.d, 2))*self.d_loss \
-            #             + (1/pow(self.p2, 2))*self.p2_loss\
-            #             + 200 * (torch.log(1 + pow(self.d, 2)) + torch.log(1 + pow(self.p2, 2)))
             self.loss = (1/pow(self.d, 2))*self.d_loss \
                         + (1/pow(self.p2, 2))*self.p2_loss\
                         + (1/pow(self.p3, 2))*self.p3_loss\
                         + 200 * (torch.log(1 + pow(self.d, 2)) + torch.log(1 + pow(self.p2, 2)) + torch.log(1 + pow(self.p3, 2)))
-
         else:
             self.loss = self.d_loss
-
 
         self.displace1 = x_pred[7,:]
         self.displace2 = x[7, i+1, :]
@@ -454,15 +431,14 @@ class Koopman_Desko(object):
                 plt.rc('font', **font)
                 f, axs = plt.subplots(3, 3, sharex=True, figsize=(15, 9))
                 legend_created = False
-                for i in range(3):  # 行索引
-                    for j in range(3):  # 列索引
-                        # 绘制每个子图
+                for i in range(3):
+                    for j in range(3):
                         axs[i, j].plot(x[:, i * 3 + j], label='Ground Truth', color='k', linewidth=2)
                         for k in range(len(x_time_list)):
                             axs[i, j].plot(x_time_list[k], x_pred_list[k][:, :, i * 3 + j], label='Koopman Model Prediction', color=color1, linewidth=2)
-                            if not legend_created:  # 如果还没有获取过 handles 和 labels
+                            if not legend_created:
                                 handles, labels = axs[i, j].get_legend_handles_labels()
-                                legend_created = True  # 设置标志变量为 True，表示已经获取过一次
+                                legend_created = True
                         axs[i, j].set_title(titles[i * 3 + j])
                         axs[i, j].legend().set_visible(False)
 
@@ -477,7 +453,6 @@ class Koopman_Desko(object):
                     else:
                         result_type = 'nopi'
                     plt.savefig('open_loop_result/'+str(result_type)+'/predictions_new' + str(e) + '.pdf')
-                    # plt.savefig('open_loop_result/predictions_new' + str(e) + '.png')
                     print("plot")
                     print("save test list")
                     torch.save(x_pred_list, 'open_loop_result/'+str(result_type)+'/x_pred_list.pt')
@@ -494,7 +469,6 @@ class Koopman_Desko(object):
     def pred_forward_test_buff(self,x,u,args):
         pred_horizon = args['pred_horizon']
 
-        #测试模式
         self.net.eval()
 
         x0_buff = x[:,0,:]        
@@ -527,12 +501,6 @@ class Koopman_Desko(object):
         for i in range(pred_horizon-1):
             x0 = torch.matmul(x0,self.A_1)+torch.matmul(u[:,i,:],self.B_1)
             x_pred = torch.matmul(x0, self.C_1)
-            # if args['extend_state']:
-            #     x_pred = torch.matmul(x0,self.C_1)
-            # else:
-            #     x_pred = torch.matmul(x0,self.C_1)
-
-            # x_pred = torch.matmul(x0,self.C_1)
             x_pred_matrix[:,i,:] = x_pred
             x_pred_list.append(x_pred.cpu().detach().numpy())
             x_real_list.append(x[:,i+1,:].cpu().detach().numpy())

@@ -1,5 +1,5 @@
 args = {
-    'batch_size': 256,
+    'batch_size': 400,  # 256
     'pred_horizon': 20,
     'mhe_horizon': 45,
     # latent dimension
@@ -13,7 +13,6 @@ args = {
     'continue_data_collection': False,  # if True: continue training
 
     'total_data_size': 2000,
-
     'max_ep_steps': 300,
     'test_steps': 10,
     'max_test_ep_steps': 100,
@@ -26,7 +25,7 @@ args = {
     'gamma': 0.8,
     'mix_x_u': 3,
     'if_mix': False,
-    'num_epochs': 251,
+    'num_epochs': 151,
     # 'num_epochs': 50,
     'weight_decay': 10,
 
@@ -34,9 +33,9 @@ args = {
 
     'restore': False,
 
-    # 'if_pi': True,
-    'if_pi': False,
-    'reload_data': False,  # Use previous dataset
+    'if_pi': True,
+    # 'if_pi': False,
+    'reload_data': True,  # Use previous dataset
     # 'reload_data': False,  # Regenerate new dataset
     # 'if_sigma': True,
     'if_sigma': False,
@@ -50,12 +49,6 @@ args = {
     'SAVE_A1': "save_model/A1.pt",
     'SAVE_B1': "save_model/B1.pt",
     'SAVE_C1': "save_model/C1.pt",
-
-    # 'MODEL_SAVE': "nopi_model/model_v1.pt",
-    # 'NOISE_SAVE': "nopi_model/noise.pt",
-    # 'SAVE_A1': "nopi_model/A1.pt",
-    # 'SAVE_B1': "nopi_model/B1.pt",
-    # 'SAVE_C1': "nopi_model/C1.pt",
 
     'SAVE_OPTI1': "save_model/opti1_v1.pt",
     'SAVE_OPTI2': "save_model/opti2_v1.pt",

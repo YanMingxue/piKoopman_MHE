@@ -97,14 +97,11 @@ def train(args, env):
     train_list = []
     val_list = []
     for e in range(args['num_epochs']):
-        train,val = model.learn(e, x_train, x_val, shift, args)
+        train, val = model.learn(e, x_train, x_val, shift, args)
         train_list.append(train)
         val_list.append(val)
         if (e % 10 == 0):
-            # 生成test数据的时候先不保存权重
             model.parameter_store(args)
-            # if args['if_sigma']:
-            #     print("sigma:",model.sigma)
             if args['if_pi']:
                 print("d={},p2={},p3={}".format(model.d, model.p2, model.p3))
         if (e % 1 == 0):
