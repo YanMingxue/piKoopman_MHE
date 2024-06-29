@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+@File : estimator.py
+@Author : Yan Mingxue
+@Software : PyCharm
+"""
+
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -8,8 +16,6 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 
-
-# u1和u3必须一样吗？
 
 class generate_input():
 
@@ -62,27 +68,25 @@ class generate_input():
                 current_value_1 = np.random.uniform(self.u2_low, self.u2_low_adp)
                 current_value_2 = current_value_0 + np.random.uniform(-self.u3_adp, self.u3_adp)
 
-            # 生成保持的长度，对于低的情况，step在200到300之间
             if current_value_0 < self.u1_boundary:
                 segment_length = np.random.randint(self.low_step_1, self.low_step_2)
             else:
                 segment_length = np.random.randint(self.high_step_1, self.high_step_2)
                 consecutive_low_count = 0
 
-            # 最后一段直接填充
             if (T - length) < self.high_step_2 + 1:
                 segment_length = T - length
 
-            # 添加当前值保持的段
+
             signal[length: length + segment_length, 0] = np.full(segment_length, current_value_0)
             signal[length: length + segment_length, 1] = np.full(segment_length, current_value_1)
             signal[length: length + segment_length, 2] = np.full(segment_length, current_value_2)
 
-            # 更新连续低的计数
+
             if current_value_0 < self.u1_boundary:
                 consecutive_low_count += segment_length
 
-            # 切换到高或低
+
             current_value_0 = np.random.uniform(self.u1_low,
                                                 self.u1_low_adp) if current_value_0 > self.u1_boundary else np.random.uniform(
                 self.u1_high_adp, self.u1_high)
@@ -118,19 +122,16 @@ class generate_testinput():
         self.u1_boundary = 3.0e9
         self.u2_boundary = 1.6e9
 
-        # 高输入保持的上下界
         self.high_step_1 = 400
         self.high_step_2 = 600
 
-        # 低输入保持的上下界
+
         self.low_step_1 = 400
         self.low_step_2 = 600
 
         # action noise
-        # 好用的结果的干扰
         self.an = np.array([1e7, 1e7, 1e7])
         self.bn = np.array([1e8, 1e8, 1e8])
-        # #没有任何干扰 test一下
         # self.an = np.array([0, 0, 0])
         # self.bn = np.array([0, 0, 0])
     def signal_generate(self, T):
@@ -159,20 +160,18 @@ class generate_testinput():
                 segment_length = np.random.randint(self.high_step_1, self.high_step_2)
                 consecutive_low_count = 0
 
-            # 最后一段直接填充
             if (T - length) < self.high_step_2 + 1:
                 segment_length = T - length
 
-            # 添加当前值保持的段
             signal[length: length + segment_length, 0] = np.full(segment_length, current_value_0)
             signal[length: length + segment_length, 1] = np.full(segment_length, current_value_1)
             signal[length: length + segment_length, 2] = np.full(segment_length, current_value_2)
 
-            # 更新连续低的计数
+
             if current_value_0 < self.u1_boundary:
                 consecutive_low_count += segment_length
 
-            # 切换到高或低
+
             current_value_0 = np.random.uniform(self.u1_low,
                                                 self.u1_low_adp) if current_value_0 > self.u1_boundary else np.random.uniform(
                 self.u1_high_adp, self.u1_high)

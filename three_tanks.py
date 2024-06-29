@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+@File : three_tanks.py
+@Author : Yan Mingxue
+@Software : PyCharm
+"""
+
 import math
 import torch
 import gym
@@ -5,20 +13,22 @@ from gym import spaces, logger
 from gym.utils import seeding
 import numpy as np
 import csv
-from input import generate_input,generate_testinput
+from input import generate_input, generate_testinput
 import matplotlib.pyplot as plt
 import matplotlib
+
 matplotlib.use('TkAgg')
+
 
 class three_tank_system(gym.Env):
 
-    def __init__(self, args, ref = np.array([0.18,0.67,480.3,0.19,0.65,472.8,0.06,0.67,474.9])):
+    def __init__(self, args, ref=np.array([0.18, 0.67, 480.3, 0.19, 0.65, 472.8, 0.06, 0.67, 474.9])):
         self.args = args
         self.t = 0
         self.action_sample_period = 20
         self.sampling_period = 0.005
         self.h = torch.tensor(0.001).to(self.args['device'])
-        self.sampling_steps = int(self.sampling_period/self.h)
+        self.sampling_steps = int(self.sampling_period / self.h)
         self.delay = 5
         # self.delay = 0
 
@@ -54,29 +64,16 @@ class three_tank_system(gym.Env):
         self.Hvap2 = -torch.tensor(15.7E3).to(self.args['device']) * self.sum_c
         self.Hvap3 = -torch.tensor(40.68E3).to(self.args['device']) * self.sum_c
 
-        # large noise
-        """好用的noise"""
-        # self.kw = torch.tensor([1., 5., 100., 1., 5., 100., 1., 5., 100.]).to(self.args['device'])  # noise deviation
-        # self.bw = torch.tensor([2., 10., 200., 2., 10., 200., 2., 10., 200.]).to(self.args['device'])  # noise bound
-        '''最近用的'''
-        # self.kw = torch.tensor([0.5, 2.5, 50., 0.5, 2.5, 50., 0.5, 2.5, 50.]).to(self.args['device'])  # noise deviation
-        # self.bw = torch.tensor([1., 5., 100., 1., 5., 100., 1., 5., 100.]).to(self.args['device'])  # noise bound
-        '''论文上写的'''
         self.kw = torch.tensor([0.7, 0.7, 3.5, 0.7, 0.7, 3.5, 0.7, 0.7, 3.5]).to(self.args['device'])  # noise deviation
         self.bw = torch.tensor([5., 5., 10., 5., 5., 10., 5., 5., 10.]).to(self.args['device'])  # noise bound
 
-        # # 小噪声画loss的图，noise不大的时候确实加pi效果好很多
-        # self.kw = torch.tensor([0.1, 0.1, 10., 0.1, 0.1, 10., 0.1, 0.1, 10.]).to(self.args['device'])  # noise deviation
-        # self.bw = torch.tensor([1., 10., 100., 1., 10., 100., 1., 10., 100.]).to(self.args['device'])  # noise bound
-
-        # """新换的"""
-        # self.kw = torch.tensor([0.5, 2., 10., 0.5, 2., 10., 0.5, 2., 10.]).to(self.args['device'])  # noise deviation
-        # self.bw = torch.tensor([1, 4., 20., 1, 4., 20., 1, 4., 20.]).to(self.args['device'])  # noise bound
-
-        self.xs = torch.tensor([0.1763, 0.6731, 480.3165, 0.1965, 0.6536, 472.7863, 0.0651, 0.6703, 474.8877]).to(self.args['device'])
+        self.xs = torch.tensor([0.1763, 0.6731, 480.3165, 0.1965, 0.6536, 472.7863, 0.0651, 0.6703, 474.8877]).to(
+            self.args['device'])
         self.us = 1.12 * np.array([2.9e9, 1.0e9, 2.9e9])
 
         high = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1])
+        self.state_high = torch.tensor([0.5, 1., 700., 0.5, 1., 700., 0.5, 1., 700.]).to(self.args['device'])
+        self.state_low = torch.tensor([0., 0., 0., 0., 0., 0., 0., 0., 0.]).to(self.args['device'])
 
         self.action_low = 0.2 * self.us
         self.action_high = 1.5 * self.us
@@ -108,41 +105,40 @@ class three_tank_system(gym.Env):
         return signal
 
     def step(self, step, input):
-        action = input[step-1, :].to(self.args['device'])
+        action = input[step - 1, :].to(self.args['device'])
         x0 = self.state.to(self.args['device'])
         for i in range(self.sampling_steps):
             # process_noise = torch.randn_like(self.kw).to(self.args['device'])
             process_noise = torch.normal(mean=0, std=self.kw).to(self.args['device'])
             process_noise = torch.clamp(process_noise, -self.bw, self.bw)
-            x0 = x0 + self.derivative(x0, action)*self.h + process_noise*self.h
+            x0 = x0 + self.derivative(x0, action) * self.h + process_noise * self.h
         self.state = x0
         self.t += 1
-        
         # cost = np.linalg.norm(self.state - self.reference)
         cost = torch.norm(self.state - self.reference)
         done = False
         data_collection_done = False
-        
-        return x0, cost, done, dict(reference=self.reference,data_collection_done=data_collection_done)
+
+        return x0, cost, done, dict(reference=self.reference, data_collection_done=data_collection_done)
 
     def reset(self):
         self.a_holder = self.action_space.sample()
-        # self.state = np.random.uniform(0.8, 1.2) * self.xs + np.random.normal(np.zeros_like(self.xs), self.xs*0.01)
         self.state = (torch.rand_like(self.xs) * 0.2 + 1) * self.xs + torch.randn_like(self.xs) * (self.xs * 0.01)
         self.t = 0
         self.time = 0
         return self.state.to(self.args['device'])
 
-    def reset(self,test = False, seed_=1):
+    def reset(self, test=False, seed_=1):
         self.a_holder = self.action_space.sample()
         self.state = (torch.rand_like(self.xs) * 0.2 + 1) * self.xs + torch.randn_like(self.xs) * (self.xs * 0.01)
         if test:
             np.random.seed(seed_)
-            self.state = torch.tensor([0.9599, 0.9039, 1.1200, 0.9726, 1.1643, 0.8727, 0.9055, 0.8582, 0.8544])* self.xs.cpu()
+            self.state = torch.tensor(
+                [0.9599, 0.9039, 1.1200, 0.9726, 1.1643, 0.8727, 0.9055, 0.8582, 0.8544]) * self.xs.cpu()
         self.t = 0
         self.time = 0
         return self.state.to(self.args['device'])
-    
+
     def derivative(self, x, us):
 
         xA1 = x[0]
@@ -172,15 +168,19 @@ class three_tank_system(gym.Env):
         F2 = F1 + self.F20
         F3 = F2 - self.Fr - self.Fp
 
-        f1 = self.F10 * (self.xA10 - xA1) / self.V1 + self.Fr * (xAr - xA1) / self.V1 - self.k1 * torch.exp(-self.E1 / (self.R * T1)) * xA1
-        f2 = self.F10 * (self.xB10 - xB1) / self.V1 + self.Fr * (xBr - xB1) / self.V1 + self.k1 * torch.exp(-self.E1 / (self.R * T1)) * xA1 - self.k2 * torch.exp(
+        f1 = self.F10 * (self.xA10 - xA1) / self.V1 + self.Fr * (xAr - xA1) / self.V1 - self.k1 * torch.exp(
+            -self.E1 / (self.R * T1)) * xA1
+        f2 = self.F10 * (self.xB10 - xB1) / self.V1 + self.Fr * (xBr - xB1) / self.V1 + self.k1 * torch.exp(
+            -self.E1 / (self.R * T1)) * xA1 - self.k2 * torch.exp(
             -self.E2 / (self.R * T1)) * xB1
         f3 = self.F10 * (self.T10 - T1) / self.V1 + self.Fr * (T3 - T1) / self.V1 - self.dH1 * self.k1 * torch.exp(
             -self.E1 / (self.R * T1)) * xA1 / self.Cp - self.dH2 * self.k2 * torch.exp(
             -self.E2 / (self.R * T1)) * xB1 / self.Cp + Q1 / (self.rho * self.Cp * self.V1)
 
-        f4 = F1 * (xA1 - xA2) / self.V2 + self.F20 * (self.xA20 - xA2) / self.V2 - self.k1 * torch.exp(-self.E1 / (self.R * T2)) * xA2
-        f5 = F1 * (xB1 - xB2) / self.V2 + self.F20 * (self.xB20 - xB2) / self.V2 + self.k1 * torch.exp(-self.E1 / (self.R * T2)) * xA2 - self.k2 * torch.exp(
+        f4 = F1 * (xA1 - xA2) / self.V2 + self.F20 * (self.xA20 - xA2) / self.V2 - self.k1 * torch.exp(
+            -self.E1 / (self.R * T2)) * xA2
+        f5 = F1 * (xB1 - xB2) / self.V2 + self.F20 * (self.xB20 - xB2) / self.V2 + self.k1 * torch.exp(
+            -self.E1 / (self.R * T2)) * xA2 - self.k2 * torch.exp(
             -self.E2 / (self.R * T2)) * xB2
         f6 = F1 * (T1 - T2) / self.V2 + self.F20 * (self.T20 - T2) / self.V2 - self.dH1 * self.k1 * torch.exp(
             -self.E1 / (self.R * T2)) * xA2 / self.Cp - self.dH2 * self.k2 * torch.exp(
@@ -188,16 +188,18 @@ class three_tank_system(gym.Env):
 
         f7 = F2 * (xA2 - xA3) / self.V3 - (self.Fr + self.Fp) * (xAr - xA3) / self.V3
         f8 = F2 * (xB2 - xB3) / self.V3 - (self.Fr + self.Fp) * (xBr - xB3) / self.V3
-        f9 = F2 * (T2 - T3) /self.V3 + Q3 / (self.rho * self.Cp * self.V3) + (self.Fr + self.Fp) * (xAr * self.Hvap1 + xBr * self.Hvap2 + xCr * self.Hvap3) / (
-                self.rho * self.Cp * self.V3)
+        f9 = F2 * (T2 - T3) / self.V3 + Q3 / (self.rho * self.Cp * self.V3) + (self.Fr + self.Fp) * (
+                    xAr * self.Hvap1 + xBr * self.Hvap2 + xCr * self.Hvap3) / (
+                     self.rho * self.Cp * self.V3)
 
         F = torch.stack([f1, f2, f3, f4, f5, f6, f7, f8, f9]).to(self.args['device'])
-        
+
         return F
-    
+
     def render(self, mode='human'):
 
         return
+
     #
     # def get_action(self):
     #
@@ -212,8 +214,10 @@ class three_tank_system(gym.Env):
         scale = 0.1 * self.xs
         return np.random.normal(np.zeros_like(self.xs), scale)
 
+
 import my_args
-if __name__=='__main__':
+
+if __name__ == '__main__':
     args = my_args.args
     args['device'] = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     env = three_tank_system(args)
@@ -244,12 +248,3 @@ if __name__=='__main__':
     ax.legend(handles, labels, loc=2, fancybox=False, shadow=False)
     plt.show()
     print('done')
-
-
-
-
-
-
-
-
-
