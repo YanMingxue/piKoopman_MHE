@@ -1,0 +1,1 @@
+ERROR fixed weights:0.1003351890168279; adaptive weights:0.04982961213863922
