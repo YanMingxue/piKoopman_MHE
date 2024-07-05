@@ -59,8 +59,8 @@ class MHE:
 
         # constraints
         # self.state_scale = 1.5*np.ones(self.state_dim)
-        self.state_scale = np.array([3., 3., 6., 3., 3., 6., 3., 3., 6.])
-        self.bw = 5*np.ones(self.latent_dim+self.state_dim)
+        self.state_scale = np.array([3., 3., 6., 3., 3., 6., 3., 3., 6.])  # calcultate form the scale back data
+        # self.bw = 5*np.ones(self.latent_dim+self.state_dim)
 
         # history of measurements and applied controls
         self.y_history = []
@@ -140,8 +140,8 @@ class MHE:
                 cons.append(x[i, :] >= -self.state_scale)
                 # l_error += cp.quad_form(w[i, :],self.Q)
                 l = cp.quad_form(self.y_array[i, self.select] - x[i, self.select], self.R) + cp.quad_form(w[i, :], self.Q)
-                cons.append(w[i, :] <= self.bw)
-                cons.append(w[i, :] >= -self.bw)
+                # cons.append(w[i, :] <= self.bw)
+                # cons.append(w[i, :] >= -self.bw)
                 l_error += l
                 cons.append(l <= self.max_l)
             obj = cp.quad_form(g[0, :] - self.g0, self.Q) + l_error + self.max_l
