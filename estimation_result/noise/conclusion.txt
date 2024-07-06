@@ -1,1 +1,2 @@
-ERROR fixed weights:0.1142663717838699; adaptive weights:0.04050192589865564
+ERROR fixed weights:0.15141507152490158; adaptive weights:0.05250441940533128
+FROM estimator_v2

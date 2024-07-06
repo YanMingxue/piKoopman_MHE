@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-@File : estimator.py
+@File : estimator_v2.py
 @Author : Yan Mingxue
 @Software : PyCharm
 """

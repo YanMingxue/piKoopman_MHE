@@ -14,7 +14,7 @@ if_sigma = True
 args = {
     'batch_size': 400,  # 256
     'pred_horizon': 20,
-    'mhe_horizon': 45,
+    'mhe_horizon': 40,
     # latent dimension
     'latent_dim': 13,  # lifted dimension
     'state_dim': 9,

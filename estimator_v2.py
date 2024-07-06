@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-@File : estimator.py
+@File : estimator_v2.py
 @Author : Yan Mingxue
 @Software : PyCharm
 """
@@ -16,6 +16,12 @@ from three_tanks import three_tank_system as dreamer
 # from replay_memory import ReplayMemory
 import my_args
 from train import create_directories
+
+""" 
+    This version is a general MHE implementation as described in the paper.
+    We do MHE only if the trajectory buffer is full.
+    i.e. The length of y is {H, H, ..., H} while in v_1 it is {1,2...,H,H,...H}
+"""
 
 def main():
     args = my_args.args
@@ -103,19 +109,25 @@ class MHE:
             # remove the first element
             self.u_history.pop(0)
 
-    def observe(self, y):
-        """ Update history """
+    def updatey(self, y):
         self.y_history.append(y)
         if len(self.y_history) > self.horizon:
+            # remove the first element
             self.y_history.pop(0)
+
+    def observe(self):
+        """ Update history """
+        # self.y_history.append(y)
+        # if len(self.y_history) > self.horizon:
+        #     self.y_history.pop(0)
         return len(self.y_history)
 
     # # initial g
-    def __call__(self, y, args):
+    def __call__(self, args):
 
         """State estimation using new observation y"""
-        # N = 1,2,3,...,H,H,...H
-        N = self.observe(y)
+        # In this version N = H,H,...H, since we only implement MHE after the trajectory buffer is full
+        N = self.observe()
         g = cp.Variable((N, self.latent_dim + self.state_dim))
         w = cp.Variable((N, self.latent_dim + self.state_dim))
         x = cp.Variable((N, self.state_dim))
@@ -124,40 +136,28 @@ class MHE:
         l_error = 0.
         cons = []
 
-        if N == 1:
-            print("initial guess")
-            return self.g0 @ self.C_full
-        else:
-            if self.if_sigma and N == self.horizon:
-                self.Weight_matrix_calculate(self.model, torch.tensor(self.g0, dtype=torch.float))
-            for i in range(N):
-                if i < N-1:
-                    cons.append(
-                        g[i + 1, :] == g[i, :] @ self.A + self.u_history[i] @ self.B + w[i, :]
-                        )
-                cons.append(x[i, :] == g[i, :] @ self.C_full)
-                cons.append(x[i, :] <= self.state_scale)
-                cons.append(x[i, :] >= -self.state_scale)
-                # l_error += cp.quad_form(w[i, :],self.Q)
-                l = cp.quad_form(self.y_array[i, self.select] - x[i, self.select], self.R) + cp.quad_form(w[i, :], self.Q)
-                # cons.append(w[i, :] <= self.bw)
-                # cons.append(w[i, :] >= -self.bw)
-                l_error += l
-                cons.append(l <= self.max_l)
-            obj = cp.quad_form(g[0, :] - self.g0, self.Q) + l_error + self.max_l
-            # solve mhe problem
-            prob = cp.Problem(cp.Minimize(obj), cons)
-            prob.solve(cp.MOSEK)
-                # update initial state estimate
-                # self.g0 = g.value[1, :] if N == self.u_history else g.value[0, :]
-            if N == self.horizon:
-                self.g0 = g.value[0, :] @ self.A + self.u_history[0] @ self.B
-            else:
-                self.g0 = g.value[0, :]
-            return x.value[-1, :]
+        if self.if_sigma:
+            self.Weight_matrix_calculate(self.model, torch.tensor(self.g0, dtype=torch.float))
+        for i in range(N):
+            if i < N-1:
+                cons.append(
+                    g[i + 1, :] == g[i, :] @ self.A + self.u_history[i] @ self.B + w[i, :]
+                    )
+            cons.append(x[i, :] == g[i, :] @ self.C_full)
+            cons.append(x[i, :] <= self.state_scale)
+            cons.append(x[i, :] >= -self.state_scale)
+            l = cp.quad_form(self.y_array[i, self.select] - x[i, self.select], self.R) + cp.quad_form(w[i, :], self.Q)
+            l_error += l
+            cons.append(l <= self.max_l)
+        obj = cp.quad_form(g[0, :] - self.g0, self.Q) + l_error + self.max_l
+        # solve mhe problem
+        prob = cp.Problem(cp.Minimize(obj), cons)
+        prob.solve(cp.MOSEK)
+        self.g0 = g.value[0, :] @ self.A + self.u_history[0] @ self.B
+        return x.value[0, :]
 
 
-def estimate(env, args, test_pi = False, test_sigma = True):
+def estimate(env, args, test_sigma = True):
     address_pi = 'save_model/pi/'
     address_nopi = 'save_model/nopi/'
     address_noise = 'save_model/'
@@ -185,91 +185,6 @@ def estimate(env, args, test_pi = False, test_sigma = True):
     # x_std = x_std/np.max(x_std)
     print("std:", x_std)
 
-    if test_pi:
-        print("----------------with pi-----------------")
-        args['if_sigma'] = False
-        # introduce model
-        args['MODEL_SAVE'] = address_pi +'model_v1.pt'
-        # pre-trained noise generate model
-        args['NOISE_SAVE'] = address_pi +'noise.pt'
-        args['SAVE_A1'] = address_pi +'A1.pt'
-        args['SAVE_B1'] =  address_pi +'B1.pt'
-        args['SAVE_C1'] =  address_pi +'C1.pt'
-        # args['if_sigma'] = True
-        model_pi = restore_data(args)
-        A_pi = model_pi.A_1.detach().numpy()
-        B_pi = model_pi.B_1.detach().numpy()
-        g0 = model_pi.net(x0_buff)
-        g0 = torch.cat([x0_buff, g0]).detach().numpy()
-        # g0 = g0.detach().numpy()
-        g0_guess = 1.2 * g0
-        """MHE initial with g0 guess"""
-        estimator = MHE(A_pi, B_pi, g0_guess, H, x_std, shift, model_pi, args)
-        x_est_pi = np.zeros((x_test.shape[0] - 1, args['state_dim']))
-
-        for t in range(x_test.shape[0] - 1):
-            y = x_test[t, :]
-            x_est_pi[t, :] = estimator(y, args)   # In this step we can add a condition that t > MHE_horizon or just run from 0
-            estimator.update(u_test[t, :])
-            print("step:{}; x_true:{},x_pred{}".format(t, y, x_est_pi[t, :]))
-        err_pi = mse_np(x_est_pi, x_test[:-1, :])
-
-        print("---------------- without pi -----------------")
-        args['if_sigma'] = False
-        args['MODEL_SAVE'] = address_nopi +'model_v1.pt'
-        args['SAVE_A1'] = address_pi +'A1.pt'
-        args['SAVE_B1'] = address_pi +'B1.pt'
-        args['SAVE_C1'] = address_pi +'C1.pt'
-        model_nopi = restore_data(args)
-        A_nopi = model_nopi.A_1.detach().numpy()
-        B_nopi = model_nopi.B_1.detach().numpy()
-
-        """MHE initial with g0 guess"""
-        estimator = MHE(A_nopi, B_nopi, g0_guess, H, x_std, shift, model_nopi, args)
-        x_est_nopi = np.zeros((x_test.shape[0] - 1, args['state_dim']))
-
-        for t in range(x_test.shape[0]-1):
-            y = x_test[t, :]
-            # print(u_test[t, :])
-            x_est_nopi[t, :] = estimator(y, args)
-            estimator.update(u_test[t, :])
-            print("step:{}; x_true:{},x_pred{}".format(t, y, x_est_nopi[t, :]))
-
-        err_nopi = mse_np(x_est_nopi, x_test[:-1, :])
-        print("ERROR without pi:{}; with pi:{}".format(err_nopi, err_pi))
-        x_test = x_test * shift[1].cpu().numpy() + shift[0].cpu().numpy()
-        x_est_nopi = x_est_nopi * shift[1].cpu().numpy() + shift[0].cpu().numpy()
-        x_est_pi = x_est_pi * shift[1].cpu().numpy() + shift[0].cpu().numpy()
-        """save curve"""
-        torch.save(x_test, "estimation_result/physics/x_test.pt")
-        torch.save(x_est_pi, "estimation_result/physics/x_est_pi.pt")
-        torch.save(x_est_nopi, "estimation_result/physics/x_est_nopi.pt")
-
-        # -------------- plot -------------- #
-        color1 = "#038355"
-        color2 = "#ffc34e"
-        font = {'family': 'Times New Roman', 'size': 12}
-        titles = ['XA1', 'XB1', 'T1',
-                  'XA2', 'XB2', 'T2',
-                  'XA3', 'XB3', 'T3']
-        plt.rc('font', **font)
-        f, axs = plt.subplots(3, 3, sharex=True, figsize=(15, 9))
-        for i in range(3):
-            for j in range(3):
-                axs[i, j].plot(x_test[:, i * 3 + j], label='Ground Truth', color='k', linewidth=2)
-                axs[i, j].plot(x_est_pi[:, i * 3 + j], label='Physics-informed Koopman', color=color1, linewidth=2)
-                axs[i, j].plot(x_est_nopi[:, i * 3 + j], '--', label='Koopman', color=color2, linewidth=2)
-                axs[i, j].set_title(titles[i * 3 + j])
-                axs[i, j].legend().set_visible(False)
-        for ax in axs[-1, :]:
-            ax.set_xlabel('Time Steps')
-        plt.tight_layout()
-        handles, labels = axs[0, 0].get_legend_handles_labels()
-        # f.legend(handles, labels, loc='upper right', bbox_to_anchor=(0.98, 0.98))
-        f.legend(handles, labels, loc='lower center', ncol=len(handles), bbox_to_anchor=(0.5, 0.02))
-        plt.subplots_adjust(bottom=0.15)
-        plt.savefig('estimation_result/physics/MHE_pi.pdf')
-        plt.show()
 
     if test_sigma:
         print("----------------Baseline: without sigma and PI-----------------")
@@ -289,13 +204,17 @@ def estimate(env, args, test_pi = False, test_sigma = True):
         g0_guess = 1.2 * g0_holder
         """MHE initial with g0 guess"""
         estimator_1 = MHE(A, B, g0_guess, H, x_std, shift, model, args)
-        x_est_nos = np.zeros((x_test.shape[0] - 1, args['state_dim']))
+        x_est_nos = np.zeros((x_test.shape[0] - 1 - H, args['state_dim']))
         for t in range(x_test.shape[0] - 1):
-            y = x_test[t, :]
-            x_est_nos[t, :] = estimator_1(y, args)
+            # y = x_test[t, :]
+            estimator_1.updatey(x_test[t, :])
+            if t > H-1:
+                print(t-H)
+                x_est_nos[t-H, :] = estimator_1(args)
+                print("step:{}; x_true:{},x_pred{}".format(t, x_test[t-H, :], x_est_nos[t-H, :]))
             estimator_1.update(u_test[t, :])
-            print("step:{}; x_true:{},x_pred{}".format(t, y, x_est_nos[t, :]))
-        err_nos = mse_np(x_est_nos, x_test[:-1, :])
+            # print("step:{}; x_true:{},x_pred{}".format(t, y, x_est_nos[t, :]))
+        err_nos = mse_np(x_est_nos, x_test[:-1-H, :])
 
         print("----------------with sigma and PI-----------------")
         args['if_sigma'] = True
@@ -315,13 +234,15 @@ def estimate(env, args, test_pi = False, test_sigma = True):
         estimator_2 = MHE(A_pi, B_pi, g0_guess, H, x_std, shift, model_pi, args)
         # """MHE initial with g0 guess"""
         # estimator_2 = MHE(A_pi, B_pi, g0_guess, H, x_std, shift, model_pi, args)
-        x_est_s = np.zeros((x_test.shape[0] - 1, args['state_dim']))
+        x_est_s = np.zeros((x_test.shape[0] - 1 - H, args['state_dim']))
         for t in range(x_test.shape[0] - 1):
-            y = x_test[t, :]
-            x_est_s[t, :] = estimator_2(y, args)
+            # y = x_test[t, :]
+            estimator_2.updatey(x_test[t, :])
+            if t>H-1:
+                x_est_s[t-H, :] = estimator_2(args)
+                print("step:{}; x_true:{},x_pred{}".format(t, x_test[t-H, :], x_est_s[t-H, :]))
             estimator_2.update(u_test[t, :])
-            print("step:{}; x_true:{},x_pred{}".format(t, y, x_est_s[t, :]))
-        err_s = mse_np(x_est_s, x_test[:-1, :])
+        err_s = mse_np(x_est_s, x_test[:-1-H, :])
         conclusion = "ERROR fixed weights:{}; adaptive weights:{}".format(err_nos, err_s)
         print(conclusion)
         with open('estimation_result/noise/conclusion.txt', 'w') as file:
@@ -345,7 +266,7 @@ def estimate(env, args, test_pi = False, test_sigma = True):
         f, axs = plt.subplots(3, 3, sharex=True, figsize=(15, 9))
         for i in range(3):
             for j in range(3):
-                axs[i, j].plot(x_test[:, i * 3 + j], label='Ground truth', color='k', linewidth=2)
+                axs[i, j].plot(x_test[:-1-H, i * 3 + j], label='Ground truth', color='k', linewidth=2)
                 axs[i, j].plot(x_est_s[:, i * 3 + j], label='Self-adaptive weights', color=color1, linewidth=2)
                 axs[i, j].plot(x_est_nos[:, i * 3 + j], '--', label='Fixed weights', color=color2, linewidth=2)
                 axs[i, j].set_title(titles[i * 3 + j])
