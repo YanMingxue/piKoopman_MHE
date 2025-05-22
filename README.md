@@ -30,4 +30,14 @@ and the stage cost
 
 ## Model structure
 
+The neural networks are built and trained using [PyTorch](https://pytorch.org/).
+Two types of loss functions are used for training:
+* Data-driven loss terms
+* Physics informed loss terms
+
+The model structure is shown as follows:
+
 <img src="image/model.png" alt="equation" width="800"/>
+
+
+
